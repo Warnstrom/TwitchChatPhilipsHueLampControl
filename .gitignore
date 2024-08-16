@@ -1,0 +1,16 @@
+/bin
+/obj
+/appsettings.json
+/.env
+huebridge_cacert.pem
+Add redeems Change left.txt
+/devmodesettings.json
+# Ignore build results
+[Bb]in/
+[Oo]bj/
+
+# Ignore user-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates

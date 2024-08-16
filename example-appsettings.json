@@ -1,0 +1,11 @@
+{
+    "bridgeIp": "",
+    "bridgeId": "",
+    "AccessToken": "",
+    "RefreshToken": "",
+    "AppKey": "",
+    "ChannelId": "",
+    "ClientId": "",
+    "ClientSecret": "",
+    "RedirectUri": "http://localhost:8004/callback/"
+  }
