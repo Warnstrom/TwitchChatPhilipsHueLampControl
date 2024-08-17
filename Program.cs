@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Configuration; 
+using Microsoft.Extensions.Configuration;
 using Spectre.Console;
-using System.Text; 
+using System.Text;
 using TwitchLib.Api.Core.Exceptions;
 
 namespace TwitchChatHueControls
@@ -22,7 +22,7 @@ namespace TwitchChatHueControls
                 ConfigureServices(serviceCollection, args);
 
                 // Build the service provider to resolve dependencies
-                var serviceProvider = serviceCollection.BuildServiceProvider();
+                ServiceProvider serviceProvider = serviceCollection.BuildServiceProvider();
 
                 // Run the application by resolving the main App class and calling its RunAsync method
                 await serviceProvider.GetRequiredService<App>().RunAsync();
@@ -67,13 +67,14 @@ namespace TwitchChatHueControls
 
             // Register the required services and controllers
             services.AddSingleton<IConfiguration>(configuration);
-            services.AddSingleton(new ArgsService(args)); 
-            services.AddSingleton<IJsonFileController, JsonFileController>(sp => new JsonFileController(SettingsFile));
+            services.AddSingleton(new ArgsService(args));
+            services.AddSingleton<IJsonFileController>(sp => new JsonFileController(SettingsFile));
             services.AddSingleton<IHueController, HueController>();
             services.AddSingleton<TwitchLib.Api.TwitchAPI>();
             services.AddSingleton<TwitchEventSubListener>();
             services.AddSingleton<IBridgeValidator, BridgeValidator>();
             services.AddScoped<ITwitchHttpClient, TwitchHttpClient>();
+            services.AddTransient<IVersionUpdateService, VersionUpdateService>();
             services.AddSingleton<WebServer>();
             // Register the main application entry point
             services.AddTransient<App>();
@@ -82,11 +83,27 @@ namespace TwitchChatHueControls
 
     // The main application class, handling the core flow of the program
     public class App(IConfiguration configuration, IJsonFileController jsonController, IHueController hueController,
-            TwitchLib.Api.TwitchAPI api, TwitchEventSubListener eventSubListener, WebServer webServer, ArgsService argsService, IBridgeValidator bridgeValidator)
+            TwitchLib.Api.TwitchAPI api, TwitchEventSubListener eventSubListener, WebServer webServer,
+            ArgsService argsService, IBridgeValidator bridgeValidator,
+            IVersionUpdateService versionUpdateService)
     {
         // The main run method to start the app's functionality
         public async Task RunAsync()
         {
+            var DownloadUrl = await versionUpdateService.CheckForUpdates();
+            Console.WriteLine(DownloadUrl);
+            if (!string.IsNullOrEmpty(DownloadUrl))
+            {
+                var prompt = new SelectionPrompt<string>()
+                    .Title("\nThere's an update available. Do you want to update now or later?")
+                    .AddChoices("Update now.", "Later.") // Menu options
+                    .HighlightStyle(new Style(foreground: Color.Yellow)); // Highlight style for selection   
+                string selectedOption = AnsiConsole.Prompt(prompt);
+                if (selectedOption.Equals("Update now."))
+                {
+                    await versionUpdateService.DownloadUpdate(DownloadUrl);
+                }
+            }
             await StartMenu();
         }
 

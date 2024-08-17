@@ -17,12 +17,8 @@ public class JsonFileController : IJsonFileController
         {
             WriteIndented = true, // Format the JSON to be more readable
         };
-    }
 
-    // Reads the JSON file and deserializes it into a JsonNode
-    public async Task<JsonNode?> ReadAsync()
-    {
-        if (!File.Exists(_filePath))
+          if (!File.Exists(_filePath))
         {
             // Create the file with default JSON content
             var defaultJson = new
@@ -34,13 +30,19 @@ public class JsonFileController : IJsonFileController
                 AppKey = "",
                 ClientSecret = "",
                 ClientId = "",
-                RedirectUri = "http://localhost:8004/callback/"
+                RedirectUri = "http://localhost:8004/callback/",
+                ApplicationVersion = "0.0.1"
             };
 
             string jsonString = JsonSerializer.Serialize(defaultJson, _jsonOptions);
-            await File.WriteAllTextAsync(_filePath, jsonString);
+            File.WriteAllText(_filePath, jsonString);
         }
+    }
 
+    // Reads the JSON file and deserializes it into a JsonNode
+    public async Task<JsonNode?> ReadAsync()
+    {
+      
         using (FileStream fs = File.OpenRead(_filePath))
         {
             return await JsonSerializer.DeserializeAsync<JsonNode>(fs, _jsonOptions);

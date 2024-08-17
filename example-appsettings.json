@@ -7,5 +7,6 @@
     "ChannelId": "",
     "ClientId": "",
     "ClientSecret": "",
-    "RedirectUri": "http://localhost:8004/callback/"
+    "RedirectUri": "http://localhost:8004/callback/",
+    "ApplicationVersion": "0.0.1"
   }

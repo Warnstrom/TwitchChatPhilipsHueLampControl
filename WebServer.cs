@@ -19,23 +19,17 @@ public interface IWebServer : IDisposable
 
 }
 
-public class WebServer : IWebServer, IDisposable
+public class WebServer(IConfiguration configuration) : IWebServer, IDisposable
 {
     private HttpListener _listener;
-    private readonly IConfiguration _configuration;
     private bool _disposed = false;
     private string _state;
-
-    public WebServer(IConfiguration configuration)
-    {
-        _configuration = configuration;
-    }
 
     public async Task<Authorization?> ListenAsync(string state)
     {
         _state = state;
         _listener = new HttpListener();
-        _listener.Prefixes.Add(_configuration["RedirectUri"]);
+        _listener.Prefixes.Add(configuration["RedirectUri"]);
         _listener.Start();
         try
         {
