@@ -31,5 +31,18 @@
     <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
   </None>
 </ItemGroup>
+<ItemGroup>
+  <ProjectReference Include="..\Updater\TwitchChatHueUpdater.csproj" />
+</ItemGroup>
+
+  <Target Name="CopyUpdaterFiles" AfterTargets="Publish">
+    <Copy SourceFiles="@(UpdaterLinuxFiles)" DestinationFolder="$(PublishDir)/Updater/linux-x64/" />
+    <Copy SourceFiles="@(UpdaterWindowsFiles)" DestinationFolder="$(PublishDir)/Updater/win-x64/" />
+  </Target>
+
+  <ItemGroup>
+    <UpdaterLinuxFiles Include="../Updater/bin/Release/publish_linux/**/*" />
+    <UpdaterWindowsFiles Include="../Updater/bin/Release/publish_windows/**/*" />
+</ItemGroup>
 
 </Project>

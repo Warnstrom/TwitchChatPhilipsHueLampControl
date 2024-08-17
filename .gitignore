@@ -1,14 +1,13 @@
 /bin
 /obj
-/appsettings.json
+MainApp/appsettings.json
 /.env
 huebridge_cacert.pem
 Add redeems Change left.txt
-/devmodesettings.json
+MainApp/devmodesettings.json
 # Ignore build results
 [Bb]in/
 [Oo]bj/
-
 # Ignore user-specific files
 *.user
 *.suo
