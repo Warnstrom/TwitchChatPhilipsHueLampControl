@@ -53,6 +53,7 @@ class Program
             Directory.Delete(updateDirectory, true);
             AnsiConsole.MarkupLine("[bold green]Update completed successfully![/]");
             AnsiConsole.MarkupLine("[bold yellow]You may close this window and restart the application.[/]");
+            Console.ReadKey();
         }
         catch (Exception ex)
         {
