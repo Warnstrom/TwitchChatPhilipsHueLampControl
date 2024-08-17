@@ -116,21 +116,23 @@ public class VersionUpdateService(IConfiguration configuration, IJsonFileControl
     private async Task StartUpdaterAndExit(string directoryPath)
     {
         // The updater executable is included in your application package
-        string updaterPath = null;
+        string updaterPath = "TwitchChatHueUpdater";
+        string arguments = "";
         switch (OS)
         {
             case "windows":
-                updaterPath = "TwitchChatHueUpdater.exe";
+                updaterPath += ".exe";
+                arguments = $". TwitchChatHueControls.exe {directoryPath}";
 
                 break;
             case "linux":
-                updaterPath = "TwitchChatHueUpdater";
+                arguments = $"{AppContext.BaseDirectory} TwitchChatHueControls {directoryPath}";
                 break;
         }
         var startInfo = new ProcessStartInfo
         {
             FileName = updaterPath,
-            Arguments = $"\"{AppContext.BaseDirectory}\" \"{updaterPath}\" \"{directoryPath}\"",
+            Arguments = arguments,
             UseShellExecute = true
         };
         Process.Start(startInfo);
