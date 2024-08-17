@@ -31,11 +31,12 @@ namespace TwitchChatHueControls
             {
                 // Error handling with Spectre.Console for better visual output
                 // This part displays an ASCII art with a message when an exception occurs
+                Console.OutputEncoding = System.Text.Encoding.UTF8;
                 Console.WriteLine("                    ____________________________");
                 Console.WriteLine("                   / Oops, something went wrong. \\");
                 Console.WriteLine("                   \\     Please try again :3     /");
-                Console.WriteLine("                   .´‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾");
-                Console.WriteLine("　　　　　   __   .´ ");
+                Console.WriteLine("                  / ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾");
+                Console.WriteLine("　　　　　   __  /");
                 Console.WriteLine("　　　　 ／フ   フ");
                 Console.WriteLine("　　　　|  .   .|");
                 Console.WriteLine("　 　　／`ミ__xノ");
