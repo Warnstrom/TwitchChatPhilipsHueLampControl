@@ -31,7 +31,7 @@ public class Transport
 // Interface for the Twitch EventSub listener.
 public interface ITwitchEventSubListener
 {
-    Task ValidateAndConnectAsync(Uri websocketUrl);                   // Connect to the websocket server.
+    Task ValidateAndConnectAsync(Uri websocketUrl);        // Connect to the websocket server.
     Task ListenForEventsAsync();                           // Listen for incoming events.
 }
 
@@ -39,9 +39,8 @@ public interface ITwitchEventSubListener
 public class TwitchEventSubListener(IHueController hueController, IConfiguration configuration, TwitchLib.Api.TwitchAPI api,
 IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClient twitchHttpClient) : ITwitchEventSubListener
 {
-    // Private fields for configuration, web socket, and other dependencies.
     private readonly Regex ValidHexCodePattern = new Regex("([0-9a-fA-F]{6})$"); // Regex pattern to validate hex color codes.
-    private ClientWebSocket? _webSocket;            // Web socket for connecting to Twitch EventSub.
+    private ClientWebSocket? _webSocket;                                         // Web socket for connecting to Twitch EventSub.
     // Method to connect to the Twitch EventSub websocket.
     public async Task ValidateAndConnectAsync(Uri websocketUrl)
     {
@@ -53,7 +52,6 @@ IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClie
             {
                 AnsiConsole.Markup("[yellow]AccessToken is invalid, refreshing for a new token...[/]\n");
                 TwitchLib.Api.Auth.RefreshResponse? refresh = await api.Auth.RefreshAuthTokenAsync(refreshToken, configuration["ClientSecret"], configuration["ClientId"]);
-
                 api.Settings.AccessToken = refresh.AccessToken;
                 // Update the AccessToken in the configuration file.
                 await jsonFileController.UpdateAsync("AccessToken", refresh.AccessToken);

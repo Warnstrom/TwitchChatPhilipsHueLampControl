@@ -86,13 +86,12 @@ namespace TwitchChatHueControls
     public class App(IConfiguration configuration, IJsonFileController jsonController, IHueController hueController,
             TwitchLib.Api.TwitchAPI api, TwitchEventSubListener eventSubListener, WebServer webServer,
             ArgsService argsService, IBridgeValidator bridgeValidator,
-            IVersionUpdateService versionUpdateService)
+            IVersionUpdateService versionUpdateService, ITwitchHttpClient twitchHttpClient)
     {
         // The main run method to start the app's functionality
         public async Task RunAsync()
         {
             var DownloadUrl = await versionUpdateService.CheckForUpdates();
-            Console.WriteLine(DownloadUrl);
             if (!string.IsNullOrEmpty(DownloadUrl))
             {
                 var prompt = new SelectionPrompt<string>()
@@ -226,9 +225,9 @@ namespace TwitchChatHueControls
                     AnsiConsole.Markup("[yellow]AccessToken is invalid, refreshing for a new token...[/]\n");
                     TwitchLib.Api.Auth.RefreshResponse refresh = await api.Auth.RefreshAuthTokenAsync(RefreshToken, configuration["ClientSecret"], configuration["ClientId"]);
                     api.Settings.AccessToken = refresh.AccessToken;
-
                     // Update the access token in the configuration file
                     await jsonController.UpdateAsync("AccessToken", refresh.AccessToken);
+                    twitchHttpClient.UpdateOAuthToken(refresh.AccessToken);
                     return true;
                 }
                 catch (BadRequestException ex)

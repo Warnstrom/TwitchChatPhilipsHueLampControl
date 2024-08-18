@@ -4,14 +4,13 @@ class Program
 {
     static void Main(string[] args)
     {
-        AnsiConsole.MarkupLine("[bold yellow]Updater started...[/]");
 
         if (args.Length < 3)
         {
             AnsiConsole.MarkupLine("[red]Usage: Updater.exe [green]<target directory>[/] [green]<main application executable>[/] [green]<update directory>[/][/]");
             return;
         }
-
+        AnsiConsole.MarkupLine("[bold yellow]Updater started...[/]");
         string targetDirectory = args[0];
         string mainExecutable = args[1];
         string updateDirectory = args[2];
@@ -34,20 +33,33 @@ class Program
                 string fileName = Path.GetFileName(file);
                 string destFile = Path.Combine(targetDirectory, fileName);
 
-                AnsiConsole.MarkupLine($"[cyan]Copying [bold]{fileName}[/] to [bold]{destFile}[/]...[/]");
-
-                // Delete the existing file before copying the new one to avoid corruption
-                if (File.Exists(destFile))
+                try
                 {
-                    AnsiConsole.MarkupLine($"[yellow]Deleting existing file: {destFile}[/]");
-                    File.Delete(destFile);
+                    AnsiConsole.MarkupLine($"[cyan]Copying [bold]{fileName}[/] to [bold]{destFile}[/]...[/]");
+
+                    // Delete the existing file before copying the new one to avoid corruption
+                    if (File.Exists(destFile))
+                    {
+                        AnsiConsole.MarkupLine($"[yellow]Deleting existing file: {destFile}[/]");
+                        File.Delete(destFile);
+                    }
+
+                    // Copy the new file
+                    File.Copy(file, destFile, overwrite: true);
+
+                    AnsiConsole.MarkupLine($"[green]{fileName} copied successfully.[/]");
                 }
-
-                // Copy the new file
-                File.Copy(file, destFile);
-
-                AnsiConsole.MarkupLine($"[green]{fileName} copied successfully.[/]");
+                catch (IOException ex)
+                {
+                    AnsiConsole.MarkupLine($"[red]Failed to copy {fileName}: {ex.Message}[/]");
+                    // Consider adding retry logic or rollback mechanism here
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"[red]Unexpected error while copying {fileName}: {ex.Message}[/]");
+                }
             }
+
 
             // Optionally delete the update files after copying
             Directory.Delete(updateDirectory, true);
@@ -56,8 +68,8 @@ class Program
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[bold red]Update failed: {ex.Message}[/]");
-            AnsiConsole.MarkupLine($"[red]{ex.StackTrace}[/]");
+            Console.WriteLine($"Update failed: {ex.Message}");
+            Console.WriteLine($"{ex.StackTrace}");
         }
     }
 }
