@@ -5,7 +5,7 @@ using Spectre.Console;
 public interface ITwitchHttpClient
 {
     Task<HttpResponseMessage> PostAsync(string type, string message);
-    void UpdateOAuthToken(string newToken);
+    Task UpdateOAuthToken(string newToken = "");
 }
 
 public class TwitchHttpClient : ITwitchHttpClient
@@ -19,9 +19,13 @@ public class TwitchHttpClient : ITwitchHttpClient
     private readonly HttpClient _httpClient;
     private readonly string _clientId;
     private string _oauthToken;
+     private readonly IConfiguration _configuration;
+    private readonly TwitchLib.Api.TwitchAPI _api;
 
-    public TwitchHttpClient(IConfiguration configuration)
+    public TwitchHttpClient(IConfiguration configuration, TwitchLib.Api.TwitchAPI api)
     {
+        _configuration = configuration;
+        _api = api;
         _clientId = configuration["ClientId"];
         _oauthToken = configuration["AccessToken"];
         _httpClient = new();
@@ -29,9 +33,10 @@ public class TwitchHttpClient : ITwitchHttpClient
         _httpClient.DefaultRequestHeaders.Add("Authorization", "Bearer " + _oauthToken);
     }
 
-    public void UpdateOAuthToken(string newToken)
+    public async Task UpdateOAuthToken(string newToken = "")
     {
-        _oauthToken = newToken;
+        var response = await _api.Auth.RefreshAuthTokenAsync(_configuration["RefreshToken"], _configuration["ClientSecret"]);
+        _oauthToken = string.IsNullOrEmpty(newToken) ? response.AccessToken : newToken;
         // Update the Authorization header dynamically when the token changes
         if (_httpClient.DefaultRequestHeaders.Contains("Authorization"))
         {
@@ -40,7 +45,7 @@ public class TwitchHttpClient : ITwitchHttpClient
         _httpClient.DefaultRequestHeaders.Add("Authorization", "Bearer " + _oauthToken);
     }
 
-    public async Task<HttpResponseMessage> PostAsync(string type, string message)
+   public async Task<HttpResponseMessage> PostAsync(string type, string message)
     {
         try
         {
@@ -51,8 +56,13 @@ public class TwitchHttpClient : ITwitchHttpClient
                 // Handle token expiration scenario
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
-                    AnsiConsole.MarkupLine($"[bold yellow]OAuth token is invalid or expired.[/]");
+                    AnsiConsole.MarkupLine("[bold yellow]OAuth token is invalid or expired. Attempting to refresh...[/]");
 
+                    // Refresh the token
+                    await UpdateOAuthToken();
+
+                    // Retry the request with the new token
+                    response = await _httpClient.PostAsync(url, new StringContent(message, Encoding.UTF8, "application/json"));
                 }
 
                 return response;

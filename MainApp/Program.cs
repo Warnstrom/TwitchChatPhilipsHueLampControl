@@ -268,7 +268,7 @@ namespace TwitchChatHueControls
         private async Task ConfigureTwitchTokens()
         {
             // List of scopes the application will request
-            List<string> scopes = new List<string> { "channel:bot", "user:read:chat", "channel:read:redemptions", "user:write:chat" };
+            List<string> scopes = [ "channel:bot", "user:read:chat", "channel:read:redemptions", "user:write:chat" ];
             string state = RandomStringGenerator.GenerateRandomString(); // Generate a random state for OAuth security
             api.Settings.ClientId = configuration["ClientId"];
             AnsiConsole.Markup($"Please authorize here:\n[link={getAuthorizationCodeUrl(configuration["ClientId"], configuration["RedirectUri"], scopes, state)}]Authorization Link[/]\n");

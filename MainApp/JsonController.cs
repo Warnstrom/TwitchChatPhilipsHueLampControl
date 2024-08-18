@@ -1,122 +1,131 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
+
 public interface IJsonFileController
 {
-    Task<T> GetValueByKeyAsync<T>(string key);
+    Task<T?> GetValueByKeyAsync<T>(string key);
     Task UpdateAsync(string key, string value);
 }
+
 public class JsonFileController : IJsonFileController
 {
     private readonly string _filePath;
     private readonly JsonSerializerOptions _jsonOptions;
+    private JsonObject _cachedJsonData;
+    private readonly SemaphoreSlim _fileLock = new(1, 1); // Ensures thread-safe access to the file
 
     public JsonFileController(string filePath)
     {
         _filePath = filePath;
-        _jsonOptions = new JsonSerializerOptions
+        _jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+        
+        if (!File.Exists(_filePath))
         {
-            WriteIndented = true, // Format the JSON to be more readable
+            InitializeDefaultJsonFile();
+        }
+    }
+
+    // Initialize the JSON file with default content if it does not exist
+    private void InitializeDefaultJsonFile()
+    {
+        var defaultJson = new JsonObject
+        {
+            ["bridgeIp"] = "",
+            ["bridgeId"] = "",
+            ["AccessToken"] = "",
+            ["RefreshToken"] = "",
+            ["AppKey"] = "",
+            ["ClientSecret"] = "",
+            ["ClientId"] = "",
+            ["RedirectUri"] = "http://localhost:8004/callback/",
+            ["ApplicationVersion"] = "0.0.1"
         };
 
-          if (!File.Exists(_filePath))
+        File.WriteAllText(_filePath, defaultJson.ToJsonString(_jsonOptions));
+    }
+
+    // Reads and caches the JSON data from the file, with lazy initialization and caching
+    private async Task<JsonObject> LoadJsonDataAsync()
+    {
+        if (_cachedJsonData != null) return _cachedJsonData;
+
+        await _fileLock.WaitAsync(); // Ensure only one thread can access the file at a time
+        try
         {
-            // Create the file with default JSON content
-            var defaultJson = new
+            if (_cachedJsonData == null)
             {
-                bridgeIp = "",
-                bridgeId = "",
-                AccessToken = "",
-                RefreshToken = "",
-                AppKey = "",
-                ClientSecret = "",
-                ClientId = "",
-                RedirectUri = "http://localhost:8004/callback/",
-                ApplicationVersion = "0.0.1"
-            };
-
-            string jsonString = JsonSerializer.Serialize(defaultJson, _jsonOptions);
-            File.WriteAllText(_filePath, jsonString);
+                using FileStream fs = File.OpenRead(_filePath);
+                var jsonNode = await JsonSerializer.DeserializeAsync<JsonNode>(fs, _jsonOptions);
+                _cachedJsonData = jsonNode as JsonObject ?? new JsonObject();
+            }
         }
+        catch (Exception ex)
+        {
+            // Handle I/O or JSON parsing errors
+            Console.WriteLine($"Error reading JSON file: {ex.Message}");
+            _cachedJsonData = new JsonObject(); // Return a fallback empty JSON object
+        }
+        finally
+        {
+            _fileLock.Release();
+        }
+
+        return _cachedJsonData;
     }
 
-    // Reads the JSON file and deserializes it into a JsonNode
-    public async Task<JsonNode?> ReadAsync()
+    // Writes the JSON data back to the file and refreshes the cache
+    private async Task SaveJsonDataAsync(JsonObject data)
     {
-      
-        using (FileStream fs = File.OpenRead(_filePath))
+        await _fileLock.WaitAsync();
+        try
         {
-            return await JsonSerializer.DeserializeAsync<JsonNode>(fs, _jsonOptions);
-        }
-    }
-
-    // Writes the JsonNode to the JSON file
-    public async Task WriteAsync(JsonNode data)
-    {
-        using (FileStream fs = File.Create(_filePath))
-        {
+            using FileStream fs = File.Create(_filePath);
             await JsonSerializer.SerializeAsync(fs, data, _jsonOptions);
+            _cachedJsonData = data; // Update the cache with the latest data
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error writing JSON file: {ex.Message}");
+        }
+        finally
+        {
+            _fileLock.Release();
         }
     }
 
-    // Updates the JSON file by applying the updateAction to the current JsonNode data
     public async Task UpdateAsync(string key, string value)
     {
-        // Read the JSON data asynchronously
-        JsonNode? data = await ReadAsync() ?? new JsonObject();
-
-        // Check if the data is a JsonObject and update the key with the new value
-        if (data is JsonObject jsonObject)
-        {
-            jsonObject[key] = value;
-        }
-
-        // Write the updated data back asynchronously
-        await WriteAsync(data);
+        var jsonData = await LoadJsonDataAsync();
+        jsonData[key] = value;
+        await SaveJsonDataAsync(jsonData);
     }
 
-   public async Task<T?> GetValueByKeyAsync<T>(string key)
+    public async Task<T?> GetValueByKeyAsync<T>(string key)
     {
-        JsonNode? jsonNode = await ReadAsync();
+        var jsonData = await LoadJsonDataAsync();
 
-        if (jsonNode is JsonObject jsonObject && jsonObject.TryGetPropertyValue(key, out JsonNode? value))
+        if (jsonData.TryGetPropertyValue(key, out JsonNode? value))
         {
-            if (value is T typedValue)
-            {
-                return typedValue;
-            }
-
-            // Try to convert the value to the expected type
             try
             {
                 return value.Deserialize<T>();
             }
-            catch
+            catch (JsonException ex)
             {
-                // Handle the case where the conversion fails
-                return default;
+                Console.WriteLine($"Error deserializing key '{key}': {ex.Message}");
             }
         }
 
         return default;
     }
 
-        public async Task<Dictionary<string, string>> ReadAsDictionaryAsync()
+    public async Task<Dictionary<string, string>> ReadAsDictionaryAsync()
     {
-        JsonNode? jsonNode = await ReadAsync();
-
-        Dictionary<string, string> dictionary = new Dictionary<string, string>();
-
-        if (jsonNode is JsonObject jsonObject)
-        {
-            foreach (var kvp in jsonObject)
-            {
-                if (kvp.Value is JsonValue value && value.TryGetValue(out string? stringValue))
-                {
-                    dictionary[kvp.Key] = stringValue;
-                }
-            }
-        }
-
-        return dictionary;
+        var jsonData = await LoadJsonDataAsync();
+        return jsonData.ToDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value?.ToString() ?? string.Empty
+        );
     }
 }
