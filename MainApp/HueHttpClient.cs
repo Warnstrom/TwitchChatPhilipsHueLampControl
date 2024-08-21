@@ -1,12 +1,14 @@
-using System.Net.Http.Json; 
-using System.Text.Json; 
+using System.Net.Http.Json;
+using System.Text.Json;
 using HueApi.BridgeLocator;
-using HueApi; 
-using HueApi.Models.Requests; 
-using HueApi.ColorConverters; 
-using HueApi.ColorConverters.Original.Extensions; 
-using Spectre.Console; 
+using HueApi;
+using HueApi.Models.Requests;
+using HueApi.ColorConverters;
+using HueApi.ColorConverters.Original.Extensions;
+using Spectre.Console;
 using Microsoft.Extensions.Configuration;
+using HueApi.Models;
+using HueApi.Entertainment;
 
 public interface IHueController : IDisposable
 {
@@ -60,7 +62,7 @@ public class HueController(IJsonFileController jsonController, IConfiguration co
 
         // Prepare the payload for the registration request
         var payload = new { devicetype = $"{appName}#{deviceName}", generateclientkey = true };
-        
+
         // Send a POST request to the Hue bridge to register the application
         HttpResponseMessage response = await _httpClient.PostAsJsonAsync($"http://{configuration["bridgeIp"]}/api", payload);
         JsonElement responseJson = await response.Content.ReadFromJsonAsync<JsonElement>(); // Parse the JSON response
@@ -94,7 +96,7 @@ public class HueController(IJsonFileController jsonController, IConfiguration co
             {
                 // Try to register the application
                 bool registered = await TryRegisterApplicationAsync(appName, deviceName);
-                
+
                 // If registration is successful, stop polling and initialize the Hue client
                 if (registered)
                 {
@@ -122,9 +124,17 @@ public class HueController(IJsonFileController jsonController, IConfiguration co
         return await _pollingTaskCompletionSource.Task; // Wait for polling to complete
     }
 
+    public async Task SetupHueStreaming()
+    {
+        StreamingHueClient client = new StreamingHueClient(configuration["bridgeIp"], configuration["AppKey"], configuration["bridgeId"]);
+        //Get the entertainment group
+        var all = await client.LocalHueApi.GetEntertainmentConfigurationsAsync();
+    }
+    
     // Retrieves the available lights from the Hue bridge and displays them in a table
     public async Task GetLightsAsync()
     {
+        //await SetupHueStreaming();
         _lightMap.Clear(); // Clear the existing light map
         var lights = await _hueClient.GetLightsAsync(); // Fetch lights from the bridge
         if (lights.Data.Any())
@@ -132,7 +142,7 @@ public class HueController(IJsonFileController jsonController, IConfiguration co
             // Create a table to display the lights
             var table = new Table()
                 .Border(TableBorder.Rounded)
-                .BorderColor(Color.Teal);
+                .BorderColor(Spectre.Console.Color.Teal);
 
             table.AddColumn("Type");
             table.AddColumn(new TableColumn("Name").Centered());
@@ -144,7 +154,7 @@ public class HueController(IJsonFileController jsonController, IConfiguration co
                 _lightMap[light.Metadata.Name] = light.Id;
             }
 
-            AnsiConsole.Write(table); // Display the table
+            //AnsiConsole.Write(table);
         }
         else
         {

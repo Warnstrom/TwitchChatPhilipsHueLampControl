@@ -55,7 +55,7 @@ IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClie
                 api.Settings.AccessToken = refresh.AccessToken;
                 // Update the AccessToken in the configuration file.
                 await jsonFileController.UpdateAsync("AccessToken", refresh.AccessToken);
-                twitchHttpClient.UpdateOAuthToken(refresh.AccessToken);
+                await twitchHttpClient.UpdateOAuthToken(refresh.AccessToken);
             }
         }
         // Initialize the web socket connection.
@@ -219,8 +219,6 @@ IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClie
             // Handle cases where the WebSocket connection closes unexpectedly.
             AnsiConsole.MarkupLine($"[bold red]Twitch Redemption Service connection closed prematurely.[/]");
             AnsiConsole.MarkupLine($"[bold yellow]Reason: {ex.Message}[/]");
-            AnsiConsole.MarkupLine($"[bold yellow]Error Code: {ex.ErrorCode}[/]");
-            AnsiConsole.MarkupLine($"[bold yellow]Native Error Code: {ex.NativeErrorCode}[/]");
 
             await AttemptReconnectAsync(); // Attempt to reconnect after the error.
         }
@@ -326,12 +324,10 @@ IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClie
 
             // Extract the reconnect URL from the payload.
             string reconnectUrl = (string)payload["payload"]["session"]["reconnect_url"];
-            Console.WriteLine(reconnectUrl);
 
             // Validate and connect using the new reconnect URL.
             if (Uri.TryCreate(reconnectUrl, UriKind.Absolute, out Uri? uri))
             {
-                Console.WriteLine(uri);
                 AnsiConsole.MarkupLine("[bold yellow]Reconnecting to Twitch Redemption Service[/]");
                 await ValidateAndConnectAsync(uri);
             }

@@ -91,19 +91,40 @@ namespace TwitchChatHueControls
         // The main run method to start the app's functionality
         public async Task RunAsync()
         {
-            var DownloadUrl = await versionUpdateService.CheckForUpdates();
-            if (!string.IsNullOrEmpty(DownloadUrl))
+            var downloadUrl = await versionUpdateService.CheckForUpdates();
+            if (!string.IsNullOrEmpty(downloadUrl))
             {
-                var prompt = new SelectionPrompt<string>()
-                    .Title("\nThere's an update available. Do you want to update now or later?")
-                    .AddChoices("Update now.", "Later.") // Menu options
-                    .HighlightStyle(new Style(foreground: Color.Yellow)); // Highlight style for selection   
-                string selectedOption = AnsiConsole.Prompt(prompt);
-                if (selectedOption.Equals("Update now."))
+                bool continuePrompting = true;
+
+                while (continuePrompting)
                 {
-                    await versionUpdateService.DownloadUpdate(DownloadUrl);
+                    var prompt = new SelectionPrompt<string>()
+                        .Title("[white]Would you like to update now or later?[/]")
+                        .AddChoices(new[] { "Update now", "Later", "Read More" }) // Menu options
+                        .HighlightStyle(new Style(foreground: Color.LightSkyBlue1)) // Subtle blue highlight for the selected option
+                        .Mode(SelectionMode.Leaf) // Focuses on the current selection, giving a modern feel
+                        .WrapAround(false) // Prevents wrap-around behavior for a more streamlined UX
+                        .UseConverter(text => $"[dim white]»[/] [white]{text}[/]"); // Custom converter for a minimal selection icon
+
+                    string selectedOption = AnsiConsole.Prompt(prompt);
+
+                    if (selectedOption.Equals("Update now"))
+                    {
+                        await versionUpdateService.DownloadUpdate(downloadUrl);
+                        continuePrompting = false; // Exit the loop after downloading
+                    }
+                    else if (selectedOption.Equals("Read More"))
+                    {
+                        versionUpdateService.DisplayUpdateDetails(); // Show update details
+                    }
+                    else if (selectedOption.Equals("Later"))
+                    {
+                        continuePrompting = false; // Exit the loop if the user chooses "Later"
+                    }
                 }
             }
+
+
             await StartMenu();
         }
 
@@ -152,9 +173,13 @@ namespace TwitchChatHueControls
 
             // Prompt the user to select an option
             var prompt = new SelectionPrompt<int>()
-                .Title("Please choose an option")
-                .AddChoices(1, 2) // Menu options
-                .HighlightStyle(new Style(foreground: Color.Teal)); // Highlight style for selection
+                .Title("[grey]Select an option:[/]")
+                .AddChoices(1, 2) // Menu options  
+                .HighlightStyle(new Style(foreground: Color.LightSkyBlue1)) // Subtle blue highlight for the selected option
+                                .Mode(SelectionMode.Leaf) // Focuses on the current selection, giving a modern feel
+                                .WrapAround(false) // Prevents wrap-around behavior for a more streamlined UX
+                                .UseConverter(text => $"[dim white]»[/] [white]{text}[/]"); // Custom converter for a minimal selection icon
+
 
             // Get and return the selected option
             byte selectedOption = (byte)AnsiConsole.Prompt(prompt);
@@ -165,7 +190,7 @@ namespace TwitchChatHueControls
         private async Task ValidateHueConfiguration()
         {
             // Retrieve the bridge IP, ID, and app key from the configuration
-            string localBridgeIp = configuration["bridgeIp"];
+            string localBridgeIp = configuration["bridgeIp"];                                                                                                                                                                                                                                                                       
             string localBridgeId = configuration["bridgeId"];
             string localAppKey = configuration["AppKey"];
 
@@ -227,7 +252,7 @@ namespace TwitchChatHueControls
                     api.Settings.AccessToken = refresh.AccessToken;
                     // Update the access token in the configuration file
                     await jsonController.UpdateAsync("AccessToken", refresh.AccessToken);
-                    twitchHttpClient.UpdateOAuthToken(refresh.AccessToken);
+                    await twitchHttpClient.UpdateOAuthToken(refresh.AccessToken);
                     return true;
                 }
                 catch (BadRequestException ex)
@@ -268,7 +293,7 @@ namespace TwitchChatHueControls
         private async Task ConfigureTwitchTokens()
         {
             // List of scopes the application will request
-            List<string> scopes = [ "channel:bot", "user:read:chat", "channel:read:redemptions", "user:write:chat" ];
+            List<string> scopes = ["channel:bot", "user:read:chat", "channel:read:redemptions", "user:write:chat"];
             string state = RandomStringGenerator.GenerateRandomString(); // Generate a random state for OAuth security
             api.Settings.ClientId = configuration["ClientId"];
             AnsiConsole.Markup($"Please authorize here:\n[link={getAuthorizationCodeUrl(configuration["ClientId"], configuration["RedirectUri"], scopes, state)}]Authorization Link[/]\n");

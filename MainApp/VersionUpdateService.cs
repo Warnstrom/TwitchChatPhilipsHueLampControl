@@ -9,6 +9,8 @@ public interface IVersionUpdateService
 {
     public Task<string?> CheckForUpdates();
     public Task DownloadUpdate(string downloadUrl);
+    public void DisplayUpdateDetails();
+
 
 }
 public class VersionUpdateService(IConfiguration configuration, IJsonFileController jsonFileController) : IVersionUpdateService
@@ -18,29 +20,88 @@ public class VersionUpdateService(IConfiguration configuration, IJsonFileControl
     private readonly string _repo = "TwitchChatPhilipsHueLampControl";
     private readonly GitHubClient client = new GitHubClient(new ProductHeaderValue("TwitchChatHueController"));
     private string latestVersion = "";
+
     public async Task<string?> CheckForUpdates()
     {
-
-        var releases = await client.Repository.Release.GetAll(_owner, _repo);
-        string? DownloadUrl = null;
-        if (releases.Any())
+        try
         {
-            Release latestRelease = releases.FirstOrDefault(); // Get the latest release (first in the list)
+            AnsiConsole.MarkupLine("[bold yellow]Checking for updates...[/]");
+
+            // Fetch all releases from the repository
+            var releases = await client.Repository.Release.GetAll(_owner, _repo);
+            if (!releases.Any())
+            {
+                AnsiConsole.MarkupLine("[red]No releases found in the repository.[/]");
+                return null;
+            }
+
+            // Get the latest release
+            Release latestRelease = releases.FirstOrDefault();
+            if (latestRelease == null)
+            {
+                AnsiConsole.MarkupLine("[red]Failed to identify the latest release.[/]");
+                return null;
+            }
 
             latestVersion = latestRelease.TagName.TrimStart('v'); // Extract version number
-            IReadOnlyList<ReleaseAsset> AssetList = latestRelease.Assets;
-            ReleaseAsset asset = AssetList.FirstOrDefault(asset => asset.Name.Contains(OS));
 
-            if (Version.Parse(latestVersion) > Version.Parse(configuration["ApplicationVersion"]))
+            // Compare the latest version with the currently installed version
+            var currentVersion = configuration["ApplicationVersion"];
+
+            if (Version.TryParse(latestVersion, out var parsedLatestVersion) &&
+                Version.TryParse(currentVersion, out var parsedCurrentVersion) &&
+                parsedLatestVersion > parsedCurrentVersion)
             {
-                DownloadUrl = asset.BrowserDownloadUrl;
-                Console.WriteLine($"Application version: v{configuration["ApplicationVersion"]}");
-                Console.WriteLine($"Latest version available: v{latestVersion}");
-                return DownloadUrl;
+                // Fetch the correct asset for the OS
+                IReadOnlyList<ReleaseAsset> assetList = latestRelease.Assets;
+                ReleaseAsset asset = assetList.FirstOrDefault(a => a.Name.Contains(OS));
+                AnsiConsole.MarkupLine($"[bold green]\nA new update is available![/] [grey](v{latestVersion})[/]\n");
+                if (asset != null)
+                {
+                    return asset.BrowserDownloadUrl;
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine("[red]No suitable asset found for the current OS.[/]");
+                }
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[bold green]You are already running the latest version.[/]");
             }
         }
-        Console.WriteLine("Newest version is installed.");
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[bold red]Error while checking for updates:[/] [red]{ex.Message}[/]");
+        }
+
         return null;
+    }
+
+    public async void DisplayUpdateDetails()
+    {
+        var releases = await client.Repository.Release.GetAll(_owner, _repo);
+        Release latestRelease = releases.FirstOrDefault();
+        latestVersion = latestRelease.TagName.TrimStart('v'); // Extract version number
+
+        // Compare the latest version with the currently installed version
+        var currentVersion = configuration["ApplicationVersion"];
+        IReadOnlyList<ReleaseAsset> assetList = latestRelease.Assets;
+
+        ReleaseAsset asset = assetList.FirstOrDefault(a => a.Name.Contains(OS));
+
+        var updateTable = new Table()
+            .Border(TableBorder.Rounded)
+            .HideHeaders()
+            .AddColumn(new TableColumn(""))
+            .AddColumn(new TableColumn(""))
+            .AddRow("[green]Release ID: [/]", $"[bold blue]v{latestRelease.Id}[/]")
+            .AddRow("[green]Latest Version[/]", $"[bold blue]v{latestVersion}[/]")
+            .AddRow("[green]Current Version[/]", $"[bold blue]v{currentVersion}[/]")
+            .AddRow("[green]Download URL[/]", $"[link={asset.BrowserDownloadUrl}]Download Here[/]")
+            .AddRow("[green]Release Notes[/]", $"[grey]{latestRelease.Body}[/]");
+
+        AnsiConsole.Write(updateTable);
     }
 
     public async Task DownloadUpdate(string downloadUrl)
