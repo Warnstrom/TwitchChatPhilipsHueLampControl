@@ -1,4 +1,6 @@
 ﻿using Spectre.Console;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 class Program
 {
@@ -63,14 +65,31 @@ class Program
 
             // Optionally delete the update files after copying
             Directory.Delete(updateDirectory, true);
-            AnsiConsole.MarkupLine("[bold green]Update completed successfully![/]");
-            AnsiConsole.MarkupLine("[bold yellow]You may close this window and restart the application.[/]");
-            Console.ReadKey();
+            AnsiConsole.MarkupLine("\n[bold green]Update completed successfully![/]");
+
         }
         catch (Exception ex)
         {
+
+            AnsiConsole.MarkupLine("[bold red]Update failed. Details below:[/]");
             Console.WriteLine($"Update failed: {ex.Message}");
             Console.WriteLine($"{ex.StackTrace}");
+        }
+        finally {
+            AnsiConsole.MarkupLine("[bold yellow]Press any key to close this window and restart the application.[/]");
+            Console.ReadKey();
+            string OS = RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "linux" : "windows";
+            string applicationPath = "TwitchChatHueControls";
+            if (OS.Equals("windows"))
+            {
+                applicationPath += ".exe";
+            }
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = applicationPath,
+                UseShellExecute = true
+            };
+            Process.Start(startInfo);
         }
     }
 }
