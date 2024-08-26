@@ -186,42 +186,52 @@ namespace TwitchChatHueControls
             return selectedOption;
         }
 
-        // Method to validate Hue bridge configuration
-        private async Task ValidateHueConfiguration()
+        // Method to validate Hue bridge configurationprivate async Task<bool> ValidateTwitchConfiguration()
+        private async Task<bool> ValidateHueConfiguration()
         {
-            // Retrieve the bridge IP, ID, and app key from the configuration
-            string localBridgeIp = configuration["bridgeIp"];                                                                                                                                                                                                                                                                       
+            string localBridgeIp = configuration["bridgeIp"];
             string localBridgeId = configuration["bridgeId"];
             string localAppKey = configuration["AppKey"];
-
-            // Discover the bridge if the IP or ID is missing
             if (string.IsNullOrEmpty(localBridgeIp) || string.IsNullOrEmpty(localBridgeId))
             {
+            // TODO: Configuration doesn't properly update when updating the Json configuration file 
+            // Need to find a better solution than to access the json file directly  
                 await hueController.DiscoverBridgeAsync();
-                localBridgeIp = configuration["bridgeIp"];
-                localBridgeId = configuration["bridgeId"];
+                localBridgeIp = await jsonController.GetValueByKeyAsync<string>("bridgeIp");
+                localBridgeId = await jsonController.GetValueByKeyAsync<string>("bridgeId");
+            }
+            if (string.IsNullOrEmpty(localBridgeIp))
+            {
+                AnsiConsole.Markup("[red]Bridge IP is missing, cannot configure the certificate.[/]\n");
+                return false;
             }
 
-            // Configure the certificate if not already present
             if (!File.Exists("huebridge_cacert.pem"))
             {
-                if (!string.IsNullOrEmpty(localBridgeIp))
-                {
-                    await CertificateService.ConfigureCertificate([localBridgeIp, "443", "huebridge_cacert.pem"]);
-                }
-                else
-                {
-                    AnsiConsole.Markup("[red]Bridge IP is missing, cannot configure the certificate.[/]\n");
-                }
+                await ConfigureCertificate(localBridgeIp);
             }
 
-            // Validate the bridge IP and update if needed
-            bool validBridgeIp = await bridgeValidator.ValidateBridgeIpAsync(localBridgeIp, localBridgeId, localAppKey);
-            if (!validBridgeIp)
+            bool isValidBridgeIp = await bridgeValidator.ValidateBridgeIpAsync(localBridgeIp, localBridgeId, localAppKey);
+            if (!isValidBridgeIp)
             {
-                AnsiConsole.MarkupLine($"[bold yellow]Invalid BridgeIp: {localBridgeIp}[/]");
-                AnsiConsole.MarkupLine($"[bold yellow]Discovering new BridgeIp...[/]");
+                AnsiConsole.MarkupLine($"[bold yellow]Invalid Bridge IP: {localBridgeIp}[/]");
+                AnsiConsole.MarkupLine($"[bold yellow]Discovering new Bridge IP...[/]");
                 await hueController.DiscoverBridgeAsync();
+                return false;
+            }
+
+            return true;
+        }
+
+        private async Task ConfigureCertificate(string bridgeIp)
+        {
+            try
+            {
+                await CertificateService.ConfigureCertificate([bridgeIp, "443", "huebridge_cacert.pem"]);
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.Markup($"[red]Error configuring certificate: {ex.Message}[/]\n");
             }
         }
 

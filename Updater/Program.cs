@@ -75,21 +75,30 @@ class Program
             Console.WriteLine($"Update failed: {ex.Message}");
             Console.WriteLine($"{ex.StackTrace}");
         }
-        finally {
+        finally
+        {
             AnsiConsole.MarkupLine("[bold yellow]Press any key to close this window and restart the application.[/]");
-            Console.ReadKey();
-            string OS = RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "linux" : "windows";
-            string applicationPath = "TwitchChatHueControls";
-            if (OS.Equals("windows"))
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                applicationPath += ".exe";
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "TwitchChatHueControls.exe",
+                    UseShellExecute = true
+                });
+
             }
-            var startInfo = new ProcessStartInfo
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-                FileName = applicationPath,
-                UseShellExecute = true
-            };
-            Process.Start(startInfo);
+                string terminalCommand = $"TwitchChatHueControls";
+
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "gnome-terminal",
+                    Arguments = terminalCommand,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                });
+            }
         }
     }
 }

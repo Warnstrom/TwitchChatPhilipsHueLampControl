@@ -35,19 +35,34 @@ public class HueController(IJsonFileController jsonController, IConfiguration co
     public async Task DiscoverBridgeAsync()
     {
         // Discover bridges within a 10-second window
-        IEnumerable<LocatedBridge>? bridges = await _bridgeLocator.LocateBridgesAsync(TimeSpan.FromSeconds(10));
-        LocatedBridge? bridge = bridges.FirstOrDefault(); // Select the first discovered bridge
+        //IEnumerable<LocatedBridge>? bridges = await _bridgeLocator.LocateBridgesAsync(TimeSpan.FromSeconds(10));
 
-        // If a bridge is found, save its ID and IP address to the settings file
-        if (bridge != null)
+         IEnumerable<LocatedBridge>? bridges = null;
+
+        await AnsiConsole.Status()
+            .StartAsync("Searching for Hue bridges...", async ctx =>
+            {
+                // Adjust these time spans as needed.
+                var searchTimeout = TimeSpan.FromSeconds(10);
+                var discoveryTimeout = TimeSpan.FromSeconds(60);
+
+                // This is where the discovery happens with the spinner active.
+                bridges = await HueBridgeDiscovery.CompleteDiscoveryAsync(searchTimeout, discoveryTimeout);
+            });
+
+        // Once the discovery is done, you can process the bridges.
+        if (bridges != null)
         {
-            AnsiConsole.MarkupLine($"[bold green]Found BridgeIp: {bridge.IpAddress}[/]");
-            await jsonController.UpdateAsync("bridgeId", bridge.BridgeId);
-            await jsonController.UpdateAsync("bridgeIp", bridge.IpAddress);
+            foreach (var bridge in bridges)
+            {
+                AnsiConsole.MarkupLine($"[green]Discovered Bridge:[/] {bridge.BridgeId} - {bridge.IpAddress}");
+                await jsonController.UpdateAsync("bridgeId", bridge.BridgeId);
+                await jsonController.UpdateAsync("bridgeIp", bridge.IpAddress);
+            }
         }
         else
         {
-            AnsiConsole.MarkupLine("[bold red]No Bridges found.[/]");
+            AnsiConsole.MarkupLine("[red]No bridges found.[/]");
         }
     }
 
