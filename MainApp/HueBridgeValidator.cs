@@ -46,6 +46,7 @@ public class BridgeValidator : IBridgeValidator, IDisposable
 
     public async Task<bool> ValidateBridgeIpAsync(string localBridgeIp, string bridgeId, string appKey)
     {
+
         if (string.IsNullOrEmpty(localBridgeIp) || string.IsNullOrEmpty(appKey))
         {
             return false;
@@ -81,7 +82,6 @@ public class BridgeValidator : IBridgeValidator, IDisposable
                 {
                     bridgeIdFromResponse = bridgeIdValue?.AsValue().ToString();
                 }
-            
                 return ipAddress == localBridgeIp && bridgeIdFromResponse == bridgeId.ToUpper();
             }
         }
