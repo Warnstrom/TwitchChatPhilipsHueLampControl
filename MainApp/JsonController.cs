@@ -33,9 +33,10 @@ public class JsonFileController : IJsonFileController
         {
             ["bridgeIp"] = "",
             ["bridgeId"] = "",
+            ["AppKey"] = "",
+            ["HueStreamingClientKey"] = "",
             ["AccessToken"] = "",
             ["RefreshToken"] = "",
-            ["AppKey"] = "",
             ["ClientSecret"] = "",
             ["ClientId"] = "",
             ["RedirectUri"] = "http://localhost:8004/callback/",

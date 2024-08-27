@@ -4,11 +4,10 @@ using HueApi.BridgeLocator;
 using HueApi;
 using HueApi.Models.Requests;
 using HueApi.ColorConverters;
-using HueApi.ColorConverters.Original.Extensions;
 using Spectre.Console;
 using Microsoft.Extensions.Configuration;
-using HueApi.Models;
 using HueApi.Entertainment;
+using HueApi.Entertainment.Models;
 
 public interface IHueController : IDisposable
 {
@@ -81,11 +80,12 @@ public class HueController(IJsonFileController jsonController, IConfiguration co
         // Send a POST request to the Hue bridge to register the application
         HttpResponseMessage response = await _httpClient.PostAsJsonAsync($"http://{configuration["bridgeIp"]}/api", payload);
         JsonElement responseJson = await response.Content.ReadFromJsonAsync<JsonElement>(); // Parse the JSON response
-
         // If the registration is successful, extract and save the app key
         if (responseJson.ValueKind == JsonValueKind.Array && responseJson[0].TryGetProperty("success", out var success))
         {
             _appKey = success.GetProperty("username").GetString();
+            var StreamingClientKey = success.GetProperty("clientkey").GetString();
+            await jsonController.UpdateAsync("HueStreamingClientKey", StreamingClientKey);
             await jsonController.UpdateAsync("AppKey", _appKey);
             return true;
         }
@@ -131,6 +131,7 @@ public class HueController(IJsonFileController jsonController, IConfiguration co
         {
             // If the app key is already available, connect immediately
             _hueClient = new LocalHueApi(bridgeIp, appKey);
+            //HueApi.Models.Clip.RegisterEntertainmentResult? t = await LocalHueApi.RegisterAsync(appName, deviceName, bridgeIp);
             AnsiConsole.MarkupLine($"[bold green]Successfully connected with Hue Bridge using predefined ip[/] [bold yellow]({bridgeIp})[/]\n");
             await GetLightsAsync();
             _pollingTaskCompletionSource.SetResult(true);
@@ -139,12 +140,53 @@ public class HueController(IJsonFileController jsonController, IConfiguration co
         return await _pollingTaskCompletionSource.Task; // Wait for polling to complete
     }
 
-    public async Task SetupHueStreaming()
+ public async Task SetupHueStreaming()
+{
+    try
     {
-        StreamingHueClient client = new StreamingHueClient(configuration["bridgeIp"], configuration["AppKey"], configuration["bridgeId"]);
-        //Get the entertainment group
-        var all = await client.LocalHueApi.GetEntertainmentConfigurationsAsync();
+        // Retrieve the StreamingHueClientKey from your configuration
+        string streamingHueClientKey = await jsonController.GetValueByKeyAsync<string>("HueStreamingClientKey");
+        if (string.IsNullOrEmpty(streamingHueClientKey))
+        {
+            Console.WriteLine("[Error] HueStreamingClientKey is missing or invalid.");
+            return;
+        }
+
+        // Initialize the StreamingHueClient with the necessary configuration
+        var client = new StreamingHueClient(configuration["bridgeIp"], configuration["AppKey"], streamingHueClientKey);
+
+        // Get the entertainment groups
+        var entertainmentGroups = await client.LocalHueApi.GetEntertainmentGroups();
+        var group = entertainmentGroups?.Data.FirstOrDefault();
+
+        // Handle the case where no entertainment group is found
+        if (group == null)
+        {
+            Console.WriteLine("[Error] No entertainment group found.");
+            return;
+        }
+
+        // Create the streaming group with the fetched group channels
+        var entGroup = new StreamingGroup(group.Channels);
+
+        // Attempt to connect to the streaming group
+        client.ConnectAsync(group.Id);
+ 
+        Console.WriteLine("[Info] Connected successfully. Starting auto-update...");
+
+        // Start auto-updating the entertainment group
+        _ = client.AutoUpdateAsync(entGroup, CancellationToken.None);
+
+        // Optionally, log that the auto-update has started
+        Console.WriteLine("[Info] Auto-update started for the entertainment group.");
     }
+    catch (Exception ex)
+    {
+        // Log any unexpected exceptions
+        Console.WriteLine($"[Error] An exception occurred: {ex.Message}");
+    }
+}
+
     
     // Retrieves the available lights from the Hue bridge and displays them in a table
     public async Task GetLightsAsync()
@@ -184,7 +226,8 @@ public class HueController(IJsonFileController jsonController, IConfiguration co
         if (_lightMap.TryGetValue(GetLampName(lampIdentifier), out var lightId))
         {
             // Create the update command to set the color
-            var command = new UpdateLight().SetColor(color);
+            var command = new UpdateLight();
+            //command.SetColor(color);
             await _hueClient.UpdateLightAsync(lightId, command); // Send the command to the Hue bridge
         }
         else

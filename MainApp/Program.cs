@@ -212,7 +212,7 @@ namespace TwitchChatHueControls
             }
 
             bool isValidBridgeIp = await bridgeValidator.ValidateBridgeIpAsync(localBridgeIp, localBridgeId, localAppKey);
-            if (!isValidBridgeIp)
+            if (!isValidBridgeIp && !string.IsNullOrEmpty(localAppKey))
             {
                 AnsiConsole.MarkupLine($"[bold yellow]Invalid Bridge IP: {localBridgeIp}[/]");
                 AnsiConsole.MarkupLine($"[bold yellow]Discovering new Bridge IP...[/]");

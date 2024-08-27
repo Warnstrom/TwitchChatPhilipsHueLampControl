@@ -37,12 +37,12 @@ class Program
 
                 try
                 {
-                    AnsiConsole.MarkupLine($"[cyan]Copying [bold]{fileName}[/] to [bold]{destFile}[/]...[/]");
+                    //AnsiConsole.MarkupLine($"[cyan]Copying [bold]{fileName}[/] to [bold]{destFile}[/]...[/]");
 
                     // Delete the existing file before copying the new one to avoid corruption
                     if (File.Exists(destFile))
                     {
-                        AnsiConsole.MarkupLine($"[yellow]Deleting existing file: {destFile}[/]");
+                        //AnsiConsole.MarkupLine($"[yellow]Deleting existing file: {destFile}[/]");
                         File.Delete(destFile);
                     }
 
@@ -78,8 +78,7 @@ class Program
         finally
         {
             AnsiConsole.MarkupLine("[bold yellow]Press any key to close this window and restart the application.[/]");
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
+            /*{
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = "TwitchChatHueControls.exe",
@@ -89,16 +88,14 @@ class Program
             }
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-                string terminalCommand = $"TwitchChatHueControls";
 
                 Process.Start(new ProcessStartInfo
                 {
-                    FileName = "gnome-terminal",
-                    Arguments = terminalCommand,
+                    FileName = "TwitchChatHueControls",
                     UseShellExecute = false,
                     CreateNoWindow = true
                 });
-            }
+            }*/
         }
     }
 }
