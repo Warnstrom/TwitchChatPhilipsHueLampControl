@@ -8,6 +8,7 @@ using Spectre.Console;
 using Microsoft.Extensions.Configuration;
 using HueApi.Entertainment;
 using HueApi.Entertainment.Models;
+using HueApi.ColorConverters.Original.Extensions;
 
 public interface IHueController : IDisposable
 {
@@ -226,8 +227,7 @@ public class HueController(IJsonFileController jsonController, IConfiguration co
         if (_lightMap.TryGetValue(GetLampName(lampIdentifier), out var lightId))
         {
             // Create the update command to set the color
-            var command = new UpdateLight();
-            //command.SetColor(color);
+            var command = new UpdateLight().SetColor(color);
             await _hueClient.UpdateLightAsync(lightId, command); // Send the command to the Hue bridge
         }
         else
