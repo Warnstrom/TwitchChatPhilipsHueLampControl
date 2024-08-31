@@ -370,11 +370,14 @@ IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClie
                     await HandleCustomRewardRedemptionAsync(payload);
                     break;
                 case "channel.chat.message":
-                    string ChatterUserName = payload["payload"]["event"]["chatter_user_name"].ToString();
-                    string ChatterInput = payload["payload"]["event"]["message"]["text"].ToString();
-                    if (ChatterInput.Length < 10)
+                    if (argsService.Args.FirstOrDefault() == "dev")
                     {
-                        await HandleColorCommandAsync("left", CleanUserInput(ChatterInput), ChatterUserName);
+                        string ChatterUserName = payload["payload"]["event"]["chatter_user_name"].ToString();
+                        string ChatterInput = payload["payload"]["event"]["message"]["text"].ToString();
+                        if (ChatterInput.Length < 10)
+                        {
+                            await HandleColorCommandAsync("left", CleanUserInput(ChatterInput), ChatterUserName);
+                        }
                     }
                     break;
                 case "stream.online":
@@ -446,7 +449,7 @@ IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClie
     private async Task HandleColorCommandAsync(string lamp, string color, string RedeemUsername)
     {
         RGBColor finalColor = await GetColorAsync(color, RedeemUsername); // Resolve the color input.
-        await hueController.SetLampColorAsync(lamp, finalColor); // Set the lamp color using the resolved RGB value.
+        await hueController.Test(lamp, finalColor); // Set the lamp color using the resolved RGB value.
     }
 
     // Method to resolve the color input into an RGB color.
