@@ -449,7 +449,7 @@ IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClie
     private async Task HandleColorCommandAsync(string lamp, string color, string RedeemUsername)
     {
         RGBColor finalColor = await GetColorAsync(color, RedeemUsername); // Resolve the color input.
-        await hueController.Test(lamp, finalColor); // Set the lamp color using the resolved RGB value.
+        await hueController.SetLampColorAsync(lamp, finalColor); // Set the lamp color using the resolved RGB value.
     }
 
     // Method to resolve the color input into an RGB color.
