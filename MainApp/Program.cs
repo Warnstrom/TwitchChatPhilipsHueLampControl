@@ -107,19 +107,19 @@ namespace TwitchChatHueControls
                         .UseConverter(text => $"[dim white]»[/] [white]{text}[/]"); // Custom converter for a minimal selection icon
 
                     string selectedOption = AnsiConsole.Prompt(prompt);
-
-                    if (selectedOption.Equals("Update now"))
-                    {
-                        await versionUpdateService.DownloadUpdate(downloadUrl);
-                        continuePrompting = false; // Exit the loop after downloading
-                    }
-                    else if (selectedOption.Equals("Read More"))
-                    {
-                        versionUpdateService.DisplayUpdateDetails(); // Show update details
-                    }
-                    else if (selectedOption.Equals("Later"))
-                    {
-                        continuePrompting = false; // Exit the loop if the user chooses "Later"
+                    switch (selectedOption) {
+                        case "Update now":
+                            await versionUpdateService.DownloadUpdate(downloadUrl);
+                            continuePrompting = false; // Exit the loop after downloading
+                        break;
+                        
+                        case "Read More":
+                            versionUpdateService.DisplayUpdateDetails(); // Show update details
+                        break;
+                        
+                        case "Later":
+                            continuePrompting = false; // Exit the loop if the user chooses "Later"
+                        break;
                     }
                 }
             }
