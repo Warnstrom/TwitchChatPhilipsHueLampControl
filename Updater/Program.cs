@@ -77,25 +77,18 @@ class Program
         }
         finally
         {
-            AnsiConsole.MarkupLine("[bold yellow]Press any key to close this window and restart the application.[/]");
-            /*{
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = "TwitchChatHueControls.exe",
                     UseShellExecute = true
                 });
-
             }
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = "TwitchChatHueControls",
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                });
-            }*/
+                AnsiConsole.MarkupLine("[bold yellow]Press any key to close this window and restart the application.[/]");
+            }
         }
     }
 }
