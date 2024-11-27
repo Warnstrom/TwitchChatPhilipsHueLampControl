@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using Spectre.Console;
 using HueApi.ColorConverters;
 using Microsoft.Extensions.Configuration;
+namespace TwitchChatHueControls;
 
 // Classes representing the event payload structure for subscribing to events.
 public class SubscribeEventPayload
@@ -15,56 +16,66 @@ public class SubscribeEventPayload
     public Condition? condition { get; set; } // Conditions required for the event.
     public Transport? transport { get; set; } // Transport details for event subscription.
 }
-
-public class Condition
-{
-    public string? broadcaster_user_id { get; set; } // Twitch broadcaster's user ID.
-    public string? user_id { get; set; }             // User ID of the person triggering the event (optional).
-}
-
-public class Transport
-{
-    public string? method { get; set; }     // Method used for transport (e.g., websocket).
-    public string? session_id { get; set; } // Session ID for the websocket connection.
-}
-
+public record Condition(string? broadcaster_user_id, string? user_id);
+public record Transport(string? method, string? session_id);
 // Interface for the Twitch EventSub listener.
-public interface ITwitchEventSubListener
+internal interface ITwitchEventSubListener
 {
     Task ValidateAndConnectAsync(Uri websocketUrl);        // Connect to the websocket server.
     Task ListenForEventsAsync();                           // Listen for incoming events.
 }
 
 // Implementation of the Twitch EventSub listener.
-public class TwitchEventSubListener(IHueController hueController, IConfiguration configuration, TwitchLib.Api.TwitchAPI api,
-IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClient twitchHttpClient) : ITwitchEventSubListener
+internal class TwitchEventSubListener(IConfiguration configuration, TwitchLib.Api.TwitchAPI api,
+IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClient twitchHttpClient,
+IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : ITwitchEventSubListener
 {
     private readonly Regex ValidHexCodePattern = new Regex("([0-9a-fA-F]{6})$"); // Regex pattern to validate hex color codes.
     private ClientWebSocket? _webSocket;                                         // Web socket for connecting to Twitch EventSub.
-    // Method to connect to the Twitch EventSub websocket.
+                                                                                 // Method to connect to the Twitch EventSub websocket.
     public async Task ValidateAndConnectAsync(Uri websocketUrl)
     {
-        // Check if the OAuth token is valid.
-        if (await api.Auth.ValidateAccessTokenAsync() == null)
+        // Step 1: Ensure the OAuth token is valid.
+        await EnsureValidAccessTokenAsync();
+
+        // Step 2: Initialize and connect the WebSocket.
+        await InitializeAndConnectWebSocketAsync(websocketUrl);
+
+        AnsiConsole.MarkupLine("[bold green]Successfully connected to Twitch Redemption Service[/]");
+    }
+    // Validates or refreshes the OAuth token if needed.
+    private async Task EnsureValidAccessTokenAsync()
+    {
+        var tokenValidationResult = await api.Auth.ValidateAccessTokenAsync();
+        if (tokenValidationResult == null)
         {
             string refreshToken = configuration["RefreshToken"];
-            if (!string.IsNullOrEmpty(refreshToken))
+            if (string.IsNullOrEmpty(refreshToken))
             {
-                AnsiConsole.Markup("[yellow]AccessToken is invalid, refreshing for a new token...[/]\n");
-                TwitchLib.Api.Auth.RefreshResponse? refresh = await api.Auth.RefreshAuthTokenAsync(refreshToken, configuration["ClientSecret"], configuration["ClientId"]);
-                api.Settings.AccessToken = refresh.AccessToken;
-                // Update the AccessToken in the configuration file.
-                await jsonFileController.UpdateAsync("AccessToken", refresh.AccessToken);
-                await twitchHttpClient.UpdateOAuthToken(refresh.AccessToken);
+                throw new InvalidOperationException("OAuth token is invalid, and no refresh token is available.");
             }
+            AnsiConsole.Markup("[yellow]AccessToken is invalid, refreshing for a new token...[/]\n");
+            var refresh = await api.Auth.RefreshAuthTokenAsync(refreshToken, configuration["ClientSecret"], configuration["ClientId"]);
+            if (refresh == null || string.IsNullOrEmpty(refresh.AccessToken))
+            {
+                throw new InvalidOperationException("Failed to refresh the OAuth token.");
+            }
+            // Update the configuration with the new token.
+            api.Settings.AccessToken = refresh.AccessToken;
+            await jsonFileController.UpdateAsync("AccessToken", refresh.AccessToken);
+            await twitchHttpClient.UpdateOAuthToken(refresh.AccessToken);
         }
-        // Initialize the web socket connection.
+    }
+
+    // Initializes and connects the WebSocket.
+    private async Task InitializeAndConnectWebSocketAsync(Uri websocketUrl)
+    {
         _webSocket = new ClientWebSocket();
         _webSocket.Options.SetRequestHeader("Client-Id", configuration["ClientId"]);
-        _webSocket.Options.SetRequestHeader("Authorization", "Bearer " + $"oauth:{api.Settings.AccessToken}");
+        _webSocket.Options.SetRequestHeader("Authorization", $"Bearer {api.Settings.AccessToken}");
         _webSocket.Options.SetRequestHeader("Content-Type", "application/json");
+
         await _webSocket.ConnectAsync(websocketUrl, CancellationToken.None);
-        AnsiConsole.MarkupLine("[bold green]Successfully connected to Twitch Redemption Service[/]");
     }
 
     // Subscribe to channel point reward redemptions.
@@ -75,14 +86,14 @@ IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClie
             type = "channel.channel_points_custom_reward_redemption.add", // Event type for channel points redemption.
             version = "1",
             condition = new Condition
-            {
-                broadcaster_user_id = configuration["ChannelId"]
-            },
+            (
+                configuration["ChannelId"], null
+            ),
             transport = new Transport
-            {
-                method = "websocket",
-                session_id = sessionId,
-            }
+            (
+                "websocket",
+                sessionId
+            )
         };
 
         await SendMessageAsync(eventPayload); // Send the subscription request.
@@ -95,15 +106,8 @@ IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClie
         {
             type = "stream.online", // Event type for stream online notification.
             version = "1",
-            condition = new Condition
-            {
-                broadcaster_user_id = configuration["ChannelId"]
-            },
-            transport = new Transport
-            {
-                method = "websocket",
-                session_id = sessionId,
-            }
+            condition = new Condition(configuration["ChannelId"], null),
+            transport = new Transport("websocket", sessionId)
         };
 
         await SendMessageAsync(eventPayload); // Send the subscription request.
@@ -116,15 +120,8 @@ IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClie
         {
             type = "stream.offline", // Event type for stream offline notification.
             version = "1",
-            condition = new Condition
-            {
-                broadcaster_user_id = configuration["ChannelId"]
-            },
-            transport = new Transport
-            {
-                method = "websocket",
-                session_id = sessionId,
-            }
+            condition = new Condition(configuration["ChannelId"], null),
+            transport = new Transport("websocket", sessionId)
         };
 
         await SendMessageAsync(eventPayload); // Send the subscription request.
@@ -137,16 +134,8 @@ IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClie
         {
             type = "channel.chat.message", // Event type for chat messages.
             version = "1",
-            condition = new Condition
-            {
-                broadcaster_user_id = configuration["ChannelId"],
-                user_id = configuration["ChannelId"]
-            },
-            transport = new Transport
-            {
-                method = "websocket",
-                session_id = sessionId
-            }
+            condition = new Condition(configuration["ChannelId"], configuration["ChannelId"]),
+            transport = new Transport("websocket", sessionId)
         };
 
         await SendMessageAsync(eventPayload); // Send the subscription request.
@@ -176,6 +165,7 @@ IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClie
     }
 
     // Method to listen for incoming events from the WebSocket connection.
+    // Method to listen for incoming events from the WebSocket connection.
     public async Task ListenForEventsAsync()
     {
         const int maxBufferSize = 1024; // Buffer size for incoming WebSocket messages.
@@ -202,8 +192,7 @@ IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClie
                 if (result.MessageType == WebSocketMessageType.Text)
                 {
                     await messageBuffer.WriteAsync(buffer, 0, result.Count); // Write the received data to the buffer.
-
-                    // If this is the last fragment, process the full message.
+                                                                             // If this is the last fragment, process the full message.
                     if (result.EndOfMessage)
                     {
                         messageBuffer.Seek(0, SeekOrigin.Begin); // Reset the stream position.
@@ -466,7 +455,7 @@ IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClie
             return RGBColor.Random(); // Return a random color if requested.
         }
 
-        string? baseColor = await HexColorMapDictionary.Get(color); // Attempt to map the color name to a hex code.
+        string? baseColor = await hexColorMapDictionary.Get(color); // Attempt to map the color name to a hex code.
 
         if (baseColor != null)
         {

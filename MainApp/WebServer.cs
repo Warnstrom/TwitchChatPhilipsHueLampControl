@@ -2,117 +2,130 @@ using System.Net;
 using Microsoft.Extensions.Configuration;
 using Spectre.Console;
 
-public class Authorization
+namespace TwitchChatHueControls;
+public record AuthorizationResult
 {
-    public string Code { get; }
+    public required string Code { get; init; }
+    public required bool IsSuccess { get; init; }
+    public string? ErrorMessage { get; init; }
 
-    public Authorization(string code)
-    {
-        Code = code;
-    }
+    public static AuthorizationResult Success(string code) =>
+        new() { IsSuccess = true, Code = code };
+    public static AuthorizationResult Failure(string errorMessage) =>
+        new() { IsSuccess = false, Code = string.Empty, ErrorMessage = errorMessage };
 }
 
-public interface IWebServer : IDisposable
+public interface IWebServer : IAsyncDisposable
 {
-    public Task<Authorization?> ListenAsync(string state);
-    public void Dispose();
-
+    Task<AuthorizationResult> WaitForAuthorizationAsync(string state, CancellationToken cancellationToken = default);
 }
 
-public class WebServer(IConfiguration configuration) : IWebServer, IDisposable
+public sealed class WebServer(IConfiguration configuration) : IWebServer
 {
-    private HttpListener _listener;
-    private bool _disposed = false;
-    private string _state;
+    private readonly IConfiguration _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+    private readonly HttpListener _listener = new HttpListener();
+    private bool _isDisposed;
 
-    public async Task<Authorization?> ListenAsync(string state)
+    public async Task<AuthorizationResult> WaitForAuthorizationAsync(string state, CancellationToken cancellationToken = default)
     {
-        _state = state;
-        _listener = new HttpListener();
-        _listener.Prefixes.Add(configuration["RedirectUri"]);
-        _listener.Start();
+        ArgumentException.ThrowIfNullOrEmpty(state);
+        var redirectUri = _configuration["RedirectUri"]
+            ?? throw new InvalidOperationException("RedirectUri configuration is missing");
         try
         {
-            return await OnRequestAsync();
+            await StartListenerAsync(redirectUri);
+            return await ProcessRequestsAsync(state, cancellationToken);
         }
         finally
         {
-            Stop();
+            StopListener();
         }
     }
 
-    private async Task<Authorization?> OnRequestAsync()
+    private async Task StartListenerAsync(string redirectUri)
+    {
+        _listener.Prefixes.Add(redirectUri);
+        try
+        {
+            _listener.Start();
+        }
+        catch (HttpListenerException ex)
+        {
+            throw new InvalidOperationException($"Failed to start HTTP listener: {ex.Message}", ex);
+        }
+    }
+    private async Task<AuthorizationResult> ProcessRequestsAsync(
+        string expectedState,
+        CancellationToken cancellationToken)
     {
         while (_listener.IsListening)
         {
-            var context = await _listener.GetContextAsync();
-            var request = context.Request;
-            var response = context.Response;
+            var context = await _listener.GetContextAsync().WaitAsync(cancellationToken);
+            var result = await HandleRequestAsync(context, expectedState);
 
-            using (var writer = new StreamWriter(response.OutputStream))
+            if (result is not null)
             {
-                if (request.QueryString.AllKeys.Contains("state"))
-                {
-                    if (request.QueryString["state"].Equals(_state))
-                    {
-                        if (request.QueryString.AllKeys.Contains("code"))
-                        {
-                            writer.WriteLine("Authorization successful! Check your application!");
-                            writer.Flush();
-                            return new Authorization(request.QueryString["code"]);
-                        }
-                        else
-                        {
-                            writer.WriteLine("No code found in query string!");
-                            writer.Flush();
-                        }
-                    }
-                    else
-                    {   
-                        AnsiConsole.MarkupLine($"[bold red]Request state did not match.[/]");
-                        return null;
-                    }
-                }
+                return result;
+            }
+        }
 
-
-
+        return AuthorizationResult.Failure("Listener stopped without receiving valid authorization");
+    }
+    private static async Task<AuthorizationResult?> HandleRequestAsync(
+        HttpListenerContext context,
+        string expectedState)
+    {
+        var query = context.Request.QueryString;
+        AuthorizationResult? result = null;
+        await using var writer = new StreamWriter(context.Response.OutputStream);
+        try
+        {
+            if (!query.AllKeys.Contains("state"))
+            {
+                await writer.WriteLineAsync("Missing state parameter");
+                return null;
             }
 
-            // Close the response to prevent further output to the stream
-            response.Close();
+            if (!query["state"].Equals(expectedState))
+            {
+                AnsiConsole.MarkupLine("[bold red]Request state did not match.[/]");
+                await writer.WriteLineAsync("Invalid state parameter");
+                return AuthorizationResult.Failure("State mismatch");
+            }
+
+            if (!query.AllKeys.Contains("code"))
+            {
+                await writer.WriteLineAsync("Missing authorization code");
+                return AuthorizationResult.Failure("No authorization code provided");
+            }
+
+            await writer.WriteLineAsync("Authorization successful! Check your application!");
+            result = AuthorizationResult.Success(query["code"]);
         }
-        return null;
+        finally
+        {
+            context.Response.Close();
+        }
+        return result;
     }
 
-    private void Stop()
+    private void StopListener()
     {
         if (_listener.IsListening)
         {
             _listener.Stop();
         }
-        _listener.Close();
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (!_disposed)
+        if (_isDisposed)
         {
-            if (disposing)
-            {
-                Stop();
-                _listener?.Close();
-            }
-            _disposed = true;
+            return;
         }
-    }
-    ~WebServer()
-    {
-        Dispose(false);
+        StopListener();
+        _listener.Close();
+        _isDisposed = true;
+        GC.SuppressFinalize(this);
     }
 }

@@ -1,14 +1,13 @@
 using System.Security.Cryptography.X509Certificates;
-using System.Text.Json;
 using System.Text.Json.Nodes;
-
+namespace TwitchChatHueControls;
 
 public interface IBridgeValidator
 {
     public Task<bool> ValidateBridgeIpAsync(string bridgeIp, string bridgeId, string appKey);
 }
 
-public class BridgeValidator : IBridgeValidator, IDisposable
+internal class BridgeValidator : IBridgeValidator, IDisposable
 {
     private readonly HttpClient _httpClient;
 

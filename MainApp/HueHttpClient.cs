@@ -9,6 +9,9 @@ using Microsoft.Extensions.Configuration;
 using HueApi.Entertainment;
 using HueApi.Entertainment.Models;
 using HueApi.ColorConverters.Original.Extensions;
+using HueApi.Models;
+
+namespace TwitchChatHueControls;
 
 public interface IHueController : IDisposable
 {
@@ -17,10 +20,11 @@ public interface IHueController : IDisposable
     Task<bool> StartPollingForLinkButtonAsync(string appName, string deviceName, string bridgeIp, string appKey); // Starts polling for the link button press on the Hue bridge
     Task GetLightsAsync(); // Retrieves the available lights from the Hue bridge
     Task SetLampColorAsync(string lamp, RGBColor color); // Sets the color of a specific lamp
+    Task AlternatingLampColors(string lampIdentifier, RGBColor color);
 }
 
 // Implementation of the IHueController interface
-public class HueController(IJsonFileController jsonController, IConfiguration configuration) : IHueController
+internal class HueController(IJsonFileController jsonController, IConfiguration configuration) : IHueController
 {
     // Service for discovering Hue bridges over the network
     private readonly IBridgeLocator _bridgeLocator = new HttpBridgeLocator();
@@ -37,7 +41,7 @@ public class HueController(IJsonFileController jsonController, IConfiguration co
         // Discover bridges within a 10-second window
         //IEnumerable<LocatedBridge>? bridges = await _bridgeLocator.LocateBridgesAsync(TimeSpan.FromSeconds(10));
 
-         IEnumerable<LocatedBridge>? bridges = null;
+        IEnumerable<LocatedBridge>? bridges = null;
 
         await AnsiConsole.Status()
             .StartAsync("Searching for Hue bridges...", async ctx =>
@@ -141,54 +145,54 @@ public class HueController(IJsonFileController jsonController, IConfiguration co
         return await _pollingTaskCompletionSource.Task; // Wait for polling to complete
     }
 
- public async Task SetupHueStreaming()
-{
-    try
+    public async Task SetupHueStreaming()
     {
-        // Retrieve the StreamingHueClientKey from your configuration
-        string streamingHueClientKey = await jsonController.GetValueByKeyAsync<string>("HueStreamingClientKey");
-        if (string.IsNullOrEmpty(streamingHueClientKey))
+        try
         {
-            Console.WriteLine("[Error] HueStreamingClientKey is missing or invalid.");
-            return;
+            // Retrieve the StreamingHueClientKey from your configuration
+            string streamingHueClientKey = await jsonController.GetValueByKeyAsync<string>("HueStreamingClientKey");
+            if (string.IsNullOrEmpty(streamingHueClientKey))
+            {
+                Console.WriteLine("[Error] HueStreamingClientKey is missing or invalid.");
+                return;
+            }
+
+            // Initialize the StreamingHueClient with the necessary configuration
+            var client = new StreamingHueClient(configuration["bridgeIp"], configuration["AppKey"], streamingHueClientKey);
+
+            // Get the entertainment groups
+            var entertainmentGroups = await client.LocalHueApi.GetEntertainmentGroups();
+            var group = entertainmentGroups?.Data.FirstOrDefault();
+
+            // Handle the case where no entertainment group is found
+            if (group == null)
+            {
+                Console.WriteLine("[Error] No entertainment group found.");
+                return;
+            }
+
+            // Create the streaming group with the fetched group channels
+            var entGroup = new StreamingGroup(group.Channels);
+
+            // Attempt to connect to the streaming group
+            client.ConnectAsync(group.Id);
+
+            Console.WriteLine("[Info] Connected successfully. Starting auto-update...");
+
+            // Start auto-updating the entertainment group
+            _ = client.AutoUpdateAsync(entGroup, CancellationToken.None);
+
+            // Optionally, log that the auto-update has started
+            Console.WriteLine("[Info] Auto-update started for the entertainment group.");
         }
-
-        // Initialize the StreamingHueClient with the necessary configuration
-        var client = new StreamingHueClient(configuration["bridgeIp"], configuration["AppKey"], streamingHueClientKey);
-
-        // Get the entertainment groups
-        var entertainmentGroups = await client.LocalHueApi.GetEntertainmentGroups();
-        var group = entertainmentGroups?.Data.FirstOrDefault();
-
-        // Handle the case where no entertainment group is found
-        if (group == null)
+        catch (Exception ex)
         {
-            Console.WriteLine("[Error] No entertainment group found.");
-            return;
+            // Log any unexpected exceptions
+            Console.WriteLine($"[Error] An exception occurred: {ex.Message}");
         }
-
-        // Create the streaming group with the fetched group channels
-        var entGroup = new StreamingGroup(group.Channels);
-
-        // Attempt to connect to the streaming group
-        client.ConnectAsync(group.Id);
- 
-        Console.WriteLine("[Info] Connected successfully. Starting auto-update...");
-
-        // Start auto-updating the entertainment group
-        _ = client.AutoUpdateAsync(entGroup, CancellationToken.None);
-
-        // Optionally, log that the auto-update has started
-        Console.WriteLine("[Info] Auto-update started for the entertainment group.");
     }
-    catch (Exception ex)
-    {
-        // Log any unexpected exceptions
-        Console.WriteLine($"[Error] An exception occurred: {ex.Message}");
-    }
-}
 
-    
+
     // Retrieves the available lights from the Hue bridge and displays them in a table
     public async Task GetLightsAsync()
     {
@@ -236,6 +240,42 @@ public class HueController(IJsonFileController jsonController, IConfiguration co
         }
     }
 
+
+    public async Task AlternatingLampColors(string lampIdentifier, RGBColor color)
+    {
+        // Check if the lamp exists in the light map
+        if (_lightMap.TryGetValue(GetLampName(lampIdentifier), out var lightId))
+        {
+            // Create the update command to set the color
+            UpdateLight req = new()
+            {
+                Signaling = new SignalingUpdate
+                {
+                    Signal = Signal.alternating,
+                    Duration = 60000,
+                    Colors = new List<HueApi.Models.Color>
+                    {
+                        new HueApi.Models.Color { Xy = new XyPosition { X = 0.456, Y = 0.123, }},
+                        new HueApi.Models.Color { Xy = new XyPosition { X = 0.333, Y = 0.712, }}
+                    }
+                }
+            };
+            UpdateLight req1 = new()
+            {
+                Effects = new Effects
+                {
+                    Effect = Effect.prism,
+                }
+            };
+            HuePutResponse res = await _hueClient.UpdateLightAsync(lightId, req1); // Send the command to the Hue bridge
+            Console.WriteLine(res.Data.First().ToString());
+            Console.WriteLine(res.Errors.First().Description);
+        }
+        else
+        {
+            AnsiConsole.MarkupLine($"[bold red]Lamp '{lampIdentifier}' not found in the light map.[/]");
+        }
+    }
     // Maps input identifiers (e.g., "left", "right") to specific lamp names
     private string GetLampName(string lamp) => lamp switch
     {

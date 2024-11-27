@@ -4,92 +4,119 @@ using Spectre.Console;
 using System.Text;
 using TwitchLib.Api.Core.Exceptions;
 
-namespace TwitchChatHueControls
+namespace TwitchChatHueControls;
+public class Program
 {
-    class Program
+    private static async Task Main(string[] args)
     {
-        private static string SettingsFile = "";
-
-        private static async Task Main(string[] args)
+        try
         {
-            SettingsFile = args.FirstOrDefault() == "dev" ? "devmodesettings.json" : "appsettings.json";
-            try
-            {
-                // Create a new ServiceCollection (IoC container) for dependency injection
-                var serviceCollection = new ServiceCollection();
-
-                // Register and configure the required services
-                ConfigureServices(serviceCollection, args);
-
-                // Build the service provider to resolve dependencies
-                ServiceProvider serviceProvider = serviceCollection.BuildServiceProvider();
-
-                // Run the application by resolving the main App class and calling its RunAsync method
-                await serviceProvider.GetRequiredService<App>().RunAsync();
-            }
-            catch (Exception ex)
-            {
-                // Error handling with Spectre.Console for better visual output
-                // This part displays an ASCII art with a message when an exception occurs
-                Console.OutputEncoding = Encoding.UTF8;
-                Console.WriteLine("                    ____________________________");
-                Console.WriteLine("                   / Oops, something went wrong. \\");
-                Console.WriteLine("                   \\     Please try again :3     /");
-                Console.WriteLine("                  / ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾");
-                Console.WriteLine("　　　　　   __  /");
-                Console.WriteLine("　　　　 ／フ   フ");
-                Console.WriteLine("　　　　|  .   .|");
-                Console.WriteLine("　 　　／`ミ__xノ");
-                Console.WriteLine("　 　 /　　 　 |");
-                Console.WriteLine("　　 /　 ヽ　　ﾉ");
-                Console.WriteLine(" 　 │　　 | | |");
-                Console.WriteLine("／￣|　　 | | |");
-                Console.WriteLine("| (￣ヽ_ヽ)_)__)");
-                Console.WriteLine("＼二つ");
-                AnsiConsole.WriteException(ex, ExceptionFormats.ShortenEverything); // Display the exception with Spectre.Console's enhanced formatting
-            }
-            finally
-            {
-                // Prompt user to press Enter to exit the application
-                AnsiConsole.Markup("[bold yellow]Press [green]Enter[/] to exit.[/]");
-                Console.ReadLine();
-            }
+            await RunApplicationAsync(args);
         }
-
-        // Method to configure the services needed by the application
-        private static void ConfigureServices(IServiceCollection services, string[] args)
+        catch (Exception ex)
         {
-            // Create and configure the ConfigurationBuilder to load settings from the specified JSON file
-            var configurationBuilder = new ConfigurationBuilder()
-                .SetBasePath(Directory.GetCurrentDirectory()) // Set the base path to the current directory
-                .AddJsonFile(SettingsFile, optional: true, reloadOnChange: true); // Add the settings file
-            // Build the configuration object
-            IConfiguration configuration = configurationBuilder.Build();
-
-            // Register the required services and controllers
-            services.AddSingleton<IConfiguration>(configuration);
-            services.AddSingleton(new ArgsService(args));
-            services.AddSingleton<IJsonFileController>(sp => new JsonFileController(SettingsFile));
-            services.AddSingleton<IHueController, HueController>();
-            services.AddSingleton<TwitchLib.Api.TwitchAPI>();
-            services.AddSingleton<TwitchEventSubListener>();
-            services.AddSingleton<IBridgeValidator, BridgeValidator>();
-            services.AddScoped<ITwitchHttpClient, TwitchHttpClient>();
-            services.AddTransient<IVersionUpdateService, VersionUpdateService>();
-            services.AddSingleton<WebServer>();
-            // Register the main application entry point
-            services.AddTransient<App>();
+            DisplayErrorMessage(ex);
+        }
+        finally
+        {
+            PromptExit();
         }
     }
 
-    // The main application class, handling the core flow of the program
-    public class App(IConfiguration configuration, IJsonFileController jsonController, IHueController hueController,
-            TwitchLib.Api.TwitchAPI api, TwitchEventSubListener eventSubListener, WebServer webServer,
-            ArgsService argsService, IBridgeValidator bridgeValidator,
-            IVersionUpdateService versionUpdateService, ITwitchHttpClient twitchHttpClient)
+    private static async Task RunApplicationAsync(string[] args)
     {
-        // The main run method to start the app's functionality
-        public async Task RunAsync()
+        var (settingsFile, configFile) = ParseCommandLineArguments(args);
+        await using var serviceProvider = CreateServiceProvider(args, settingsFile, configFile);
+        await serviceProvider.GetRequiredService<App>().RunAsync();
+    }
+    private static (string SettingsFile, string ConfigFile) ParseCommandLineArguments(string[] args)
+    {
+        string settingsFile = args.FirstOrDefault() == "dev"
+            ? "devmodesettings.json"
+            : "appsettings.json";
+        string configFile = args.Length == 2
+            ? args[1]
+            : string.Empty;
+        return (settingsFile, configFile);
+    }
+    private static ServiceProvider CreateServiceProvider(string[] args, string settingsFile, string configFile)
+    {
+        var serviceCollection = new ServiceCollection();
+        ConfigureServices(serviceCollection, args, settingsFile, configFile);
+        return serviceCollection.BuildServiceProvider();
+    }
+    private static void ConfigureServices(
+        IServiceCollection services,
+        string[] args,
+        string settingsFile,
+        string configFile)
+    {
+        var configurationRoot = BuildConfiguration(settingsFile, configFile);
+        services
+            .AddSingleton<IConfiguration>(configurationRoot)
+            .AddSingleton<IConfigurationRoot>(configurationRoot)
+            .AddSingleton<IConfigurationService, ConfigurationService>()
+            .AddSingleton(new ArgsService(args))
+            .AddSingleton<IJsonFileController>(sp => new JsonFileController(string.IsNullOrEmpty(configFile) ? settingsFile : configFile, configurationRoot))
+            .AddSingleton<IHexColorMapDictionary>(new HexColorMapDictionary("colors.json", configurationRoot))
+            .AddSingleton<IHueController, HueController>()
+            .AddSingleton<TwitchLib.Api.TwitchAPI>()
+            .AddSingleton<TwitchEventSubListener>()
+            .AddSingleton<IBridgeValidator, BridgeValidator>()
+            .AddScoped<ITwitchHttpClient, TwitchHttpClient>()
+            .AddTransient<IVersionUpdateService, VersionUpdateService>()
+            .AddSingleton<WebServer>()
+            // Register the main application entry point
+            .AddTransient<App>();
+    }
+    private static IConfigurationRoot BuildConfiguration(string settingsFile, string configFile)
+    {
+        return new ConfigurationBuilder()
+            .SetBasePath(Directory.GetCurrentDirectory())
+            .AddJsonFile(string.IsNullOrEmpty(configFile) ? settingsFile : configFile,
+                optional: true,
+                reloadOnChange: true)
+            .Build();
+    }
+    private static void DisplayErrorMessage(Exception ex)
+    {
+        Console.OutputEncoding = Encoding.UTF8;
+        Console.WriteLine("                    ____________________________");
+        Console.WriteLine("                   / Oops, something went wrong. \\");
+        Console.WriteLine("                   \\     Please try again :3     /");
+        Console.WriteLine("                  / ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾");
+        Console.WriteLine("　　　　　   __  /");
+        Console.WriteLine("　　　　 ／フ   フ");
+        Console.WriteLine("　　　　|  .   .|");
+        Console.WriteLine("　 　　／`ミ__xノ");
+        Console.WriteLine("　 　 /　　 　 |");
+        Console.WriteLine("　　 /　 ヽ　　ﾉ");
+        Console.WriteLine(" 　 │　　 | | |");
+        Console.WriteLine("／￣|　　 | | |");
+        Console.WriteLine("| (￣ヽ_ヽ)_)__)");
+        Console.WriteLine("＼二つ");
+        AnsiConsole.WriteException(ex, ExceptionFormats.ShortenEverything);
+    }
+    private static void PromptExit()
+    {
+        AnsiConsole.Markup("[bold yellow]Press [green]Enter[/] to exit.[/]");
+        Console.ReadLine();
+    }
+}
+// The main application class, handling the core flow of the program
+internal class App(IConfiguration configuration, IJsonFileController jsonController, IHueController hueController,
+        TwitchLib.Api.TwitchAPI api, TwitchEventSubListener eventSubListener, WebServer webServer,
+        ArgsService argsService, IBridgeValidator bridgeValidator,
+        IVersionUpdateService versionUpdateService, ITwitchHttpClient twitchHttpClient, IConfigurationService configurationEditor)
+{
+    // The main run method to start the app's functionality
+    public async Task RunAsync()
+    {
+        if (argsService.Args.Length != 0 && argsService.Args[0] == "auto")
+        {
+            await StartApp();
+        }
+        else
         {
             var downloadUrl = await versionUpdateService.CheckForUpdates();
             if (!string.IsNullOrEmpty(downloadUrl))
@@ -107,276 +134,346 @@ namespace TwitchChatHueControls
                         .UseConverter(text => $"[dim white]»[/] [white]{text}[/]"); // Custom converter for a minimal selection icon
 
                     string selectedOption = AnsiConsole.Prompt(prompt);
-                    switch (selectedOption) {
+                    switch (selectedOption)
+                    {
                         case "Update now":
                             await versionUpdateService.DownloadUpdate(downloadUrl);
                             continuePrompting = false; // Exit the loop after downloading
-                        break;
-                        
+                            break;
+
                         case "Read More":
                             versionUpdateService.DisplayUpdateDetails(); // Show update details
-                        break;
-                        
+                            break;
+
                         case "Later":
                             continuePrompting = false; // Exit the loop if the user chooses "Later"
-                        break;
+                            break;
                     }
                 }
             }
 
-
             await StartMenu();
         }
+    }
 
-        // Method to handle the main menu flow
-        private async Task StartMenu()
+    // Method to handle the main menu flow
+    private async Task StartMenu()
+    {
+        while (true)
         {
-            while (true)
-            {
-                // Render the start menu and get the user's choice
-                byte choice = await RenderStartMenu();
+            // Render the start menu and get the user's choice
+            byte choice = await RenderStartMenu();
 
-                switch (choice)
-                {
-                    case 1:
-                        await ConfigureTwitchTokens(); // Handle Twitch token configuration
-                        break;
-                    case 2:
-                        await StartApp(); // Start the main application
-                        break;
-                    default:
-                        AnsiConsole.Markup("[red]Invalid choice. Please select again.[/]\n"); // Handle invalid selections
-                        break;
-                }
+            switch (choice)
+            {
+                case 1:
+                    await ConfigureTwitchTokens(); // Handle Twitch token configuration
+                    break;
+                case 2:
+                    AnsiConsole.Markup("[yellow]Opening app configuration for editing...[/]\n");
+                    await configurationEditor.EditConfigurationAsync(); // Start the main application
+                    break;
+                case 3:
+                    AnsiConsole.Markup("[green]Starting the application...[/]\n");
+                    await StartApp(); // Start the main application
+                    break;
+                case 4:
+                    AnsiConsole.Markup("[red]Exiting application...[/]\n");
+                    Environment.Exit(0);
+                    break;
             }
         }
+    }
 
-        // Method to render the start menu using Spectre.Console
-        private async Task<byte> RenderStartMenu()
+    // Method to render the start menu using Spectre.Console
+    private async Task<byte> RenderStartMenu()
+    {
+        bool twitchConfigured = await ValidateTwitchConfiguration(); // Check if Twitch is configured
+                                                                     //await ValidateHueConfiguration(); // Validate Hue bridge configuration
+
+        // Create a table to structure the menu visually
+        var borderStyle = new Style(foreground: Color.White, decoration: Decoration.Bold);
+
+        // Create a visually appealing table for the start menu
+        var table = new Table()
+            .Title("[underline bold yellow]Welcome To Yuki's Disco Light Party[/]")  // Title of the application
+            .Border(TableBorder.Rounded)                                              // Rounded borders for a friendly look
+            .BorderColor(Color.DeepSkyBlue4)                                           // Border color
+            .BorderStyle(borderStyle)                                                  // Border style with bold text
+            .AddColumn(new TableColumn("[bold gold3_1]Main Menu[/]").LeftAligned());   // Left aligned for clearer UX
+
+        // Welcome message with additional tips
+        table.AddRow("[bold cyan]This application helps you manage Twitch and Philips Hue configurations.[/]");
+        table.AddRow("[bold cyan]Select an option below to proceed.[/]");
+        table.AddEmptyRow();  // Add a blank row for spacing
+
+        // Display Twitch configuration status
+        string twitchStatus = twitchConfigured ? "[green]Complete[/]" : "[red]Incomplete[/]";
+        table.AddRow($"[bold gold3_1]1.[/] [white]Connect to Twitch[/] ({twitchStatus})");
+        table.AddRow("[bold gold3_1]3.[/] [white]Edit App Configuration[/]");
+        table.AddRow("[bold gold3_1]4.[/] [white]Start App[/]");
+        table.AddRow("[bold gold3_1]5.[/] [white]Quit Application[/]");
+
+        table.AddEmptyRow();  // Add a blank row for spacing
+
+        // Instructions to guide the user
+        table.AddRow("[bold aqua]Instructions:[/]");
+        table.AddRow("[white]Use [bold yellow]arrow keys[/] to navigate and [bold yellow]Enter[/] to select.[/]");
+
+        // Render the table in the console
+        AnsiConsole.Write(table);
+
+        // Prompt the user to select an option
+        var prompt = new SelectionPrompt<int>()
+            .Title("[grey]Select an option:[/]")
+            .AddChoices(new[] {
+            twitchConfigured ? -1 : 1, // Disable Twitch connect if already configured
+            2, 3, 4 // App Configuration, Start, and Quit options are always enabled
+            })
+            .UseConverter(option => option switch
+            {
+                1 => "[dim white]»[/] [white]Connect to Twitch[/]",
+                -1 => "[dim grey]»[/] [grey]Connect to Twitch (Configured)[/]",  // Disabled menu for Twitch
+                2 => "[dim white]»[/] [white]Edit App Configuration[/]",
+                3 => "[dim white]»[/] [white]Start App[/]",
+                4 => "[dim white]»[/] [white]Exit[/]",
+                _ => "[dim white]»[/] [white]Unknown Option[/]"
+            })
+            .HighlightStyle(new Style(foreground: Color.LightSkyBlue1)) // Subtle blue highlight for selected option
+            .Mode(SelectionMode.Leaf) // Leaf mode for modern selection UX
+            .WrapAround(false)        // Disable wrap-around behavior
+            .PageSize(5);             // Fit all options on one page
+
+
+        // Get and return the selected option
+        byte selectedOption = (byte)AnsiConsole.Prompt(prompt);
+        return selectedOption;
+    }
+
+    // Method to validate Hue bridge configurationprivate async Task<bool> ValidateTwitchConfiguration()
+    private async Task<bool> ValidateHueConfiguration()
+    {
+        string localBridgeIp = configuration["bridgeIp"];
+        string localBridgeId = configuration["bridgeId"];
+        string localAppKey = configuration["AppKey"];
+        if (string.IsNullOrEmpty(localBridgeIp) || string.IsNullOrEmpty(localBridgeId))
         {
-            bool twitchConfigured = await ValidateTwitchConfiguration(); // Check if Twitch is configured
-            await ValidateHueConfiguration(); // Validate Hue bridge configuration
-
-            // Create a table to structure the menu visually
-            var table = new Table()
-                .Border(TableBorder.Rounded)
-                .BorderColor(Color.Teal)
-                .AddColumn(new TableColumn("[bold teal]Welcome To Yuki's Disco Lights[/]")); // Add a welcome message
-
-            // Display Twitch configuration status
-            string twitchStatus = twitchConfigured ? "Complete" : "Incomplete";
-            table.AddRow($"[bold yellow]1.[/] Connect to Twitch ([{(twitchConfigured ? "green" : "yellow")}]{twitchStatus}[/])");
-            table.AddRow("[bold yellow]2.[/] Start Bot");
-
-            // Render the table in the console
-            AnsiConsole.Write(table);
-
-            // Prompt the user to select an option
-            var prompt = new SelectionPrompt<int>()
-                .Title("[grey]Select an option:[/]")
-                .AddChoices(1, 2) // Menu options  
-                .HighlightStyle(new Style(foreground: Color.LightSkyBlue1)) // Subtle blue highlight for the selected option
-                                .Mode(SelectionMode.Leaf) // Focuses on the current selection, giving a modern feel
-                                .WrapAround(false) // Prevents wrap-around behavior for a more streamlined UX
-                                .UseConverter(text => $"[dim white]»[/] [white]{text}[/]"); // Custom converter for a minimal selection icon
-
-
-            // Get and return the selected option
-            byte selectedOption = (byte)AnsiConsole.Prompt(prompt);
-            return selectedOption;
+            // TODO: Configuration doesn't properly update when updating the Json configuration file
+            // Need to find a better solution than to access the json file directly
+            await hueController.DiscoverBridgeAsync();
+            localBridgeIp = await jsonController.GetValueByKeyAsync<string>("bridgeIp");
+            localBridgeId = await jsonController.GetValueByKeyAsync<string>("bridgeId");
+        }
+        if (string.IsNullOrEmpty(localBridgeIp))
+        {
+            AnsiConsole.Markup("[red]Bridge IP is missing, cannot configure the certificate.[/]\n");
+            return false;
         }
 
-        // Method to validate Hue bridge configurationprivate async Task<bool> ValidateTwitchConfiguration()
-        private async Task<bool> ValidateHueConfiguration()
+        if (!File.Exists("huebridge_cacert.pem"))
         {
-            string localBridgeIp = configuration["bridgeIp"];
-            string localBridgeId = configuration["bridgeId"];
-            string localAppKey = configuration["AppKey"];
-            if (string.IsNullOrEmpty(localBridgeIp) || string.IsNullOrEmpty(localBridgeId))
-            {
-            // TODO: Configuration doesn't properly update when updating the Json configuration file 
-            // Need to find a better solution than to access the json file directly  
-                await hueController.DiscoverBridgeAsync();
-                localBridgeIp = await jsonController.GetValueByKeyAsync<string>("bridgeIp");
-                localBridgeId = await jsonController.GetValueByKeyAsync<string>("bridgeId");
-            }
-            if (string.IsNullOrEmpty(localBridgeIp))
-            {
-                AnsiConsole.Markup("[red]Bridge IP is missing, cannot configure the certificate.[/]\n");
-                return false;
-            }
+            await ConfigureCertificate(localBridgeIp);
+        }
 
-            if (!File.Exists("huebridge_cacert.pem"))
-            {
-                await ConfigureCertificate(localBridgeIp);
-            }
+        bool isValidBridgeIp = await bridgeValidator.ValidateBridgeIpAsync(localBridgeIp, localBridgeId, localAppKey);
+        if (!isValidBridgeIp && !string.IsNullOrEmpty(localAppKey))
+        {
+            AnsiConsole.MarkupLine($"[bold yellow]Invalid Bridge IP: {localBridgeIp}[/]");
+            AnsiConsole.MarkupLine($"[bold yellow]Discovering new Bridge IP...[/]");
+            await hueController.DiscoverBridgeAsync();
+            return false;
+        }
 
-            bool isValidBridgeIp = await bridgeValidator.ValidateBridgeIpAsync(localBridgeIp, localBridgeId, localAppKey);
-            if (!isValidBridgeIp && !string.IsNullOrEmpty(localAppKey))
-            {
-                AnsiConsole.MarkupLine($"[bold yellow]Invalid Bridge IP: {localBridgeIp}[/]");
-                AnsiConsole.MarkupLine($"[bold yellow]Discovering new Bridge IP...[/]");
-                await hueController.DiscoverBridgeAsync();
-                return false;
-            }
+        return true;
+    }
 
+    private static async Task ConfigureCertificate(string bridgeIp)
+    {
+        try
+        {
+            await CertificateService.ConfigureCertificate([bridgeIp, "443", "huebridge_cacert.pem"]);
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.Markup($"[red]Error configuring certificate: {ex.Message}[/]\n");
+        }
+    }
+
+    // Method to validate Twitch configuration
+    private async Task<bool> ValidateTwitchConfiguration()
+    {
+        string RefreshToken = configuration["RefreshToken"]; // Get the refresh token from the configuration
+
+        if (string.IsNullOrEmpty(RefreshToken))
+        {
+            return false; // Return false if no refresh token is found
+        }
+
+        // Set the access token for the API and validate it
+        api.Settings.AccessToken = configuration["AccessToken"];
+        if (await api.Auth.ValidateAccessTokenAsync() != null)
+        {
             return true;
         }
-
-        private async Task ConfigureCertificate(string bridgeIp)
+        else
         {
             try
             {
-                await CertificateService.ConfigureCertificate([bridgeIp, "443", "huebridge_cacert.pem"]);
-            }
-            catch (Exception ex)
-            {
-                AnsiConsole.Markup($"[red]Error configuring certificate: {ex.Message}[/]\n");
-            }
-        }
-
-        // Method to validate Twitch configuration
-        private async Task<bool> ValidateTwitchConfiguration()
-        {
-            string RefreshToken = configuration["RefreshToken"]; // Get the refresh token from the configuration
-
-            if (string.IsNullOrEmpty(RefreshToken))
-            {
-                return false; // Return false if no refresh token is found
-            }
-
-            // Set the access token for the API and validate it
-            api.Settings.AccessToken = configuration["AccessToken"];
-            if (await api.Auth.ValidateAccessTokenAsync() != null)
-            {
+                // Refresh the access token because it's invalid
+                api.Settings.ClientId = configuration["ClientId"];
+                AnsiConsole.Markup("[yellow]AccessToken is invalid, refreshing for a new token...[/]\n");
+                TwitchLib.Api.Auth.RefreshResponse refresh = await api.Auth.RefreshAuthTokenAsync(RefreshToken, configuration["ClientSecret"], configuration["ClientId"]);
+                api.Settings.AccessToken = refresh.AccessToken;
+                // Update the access token in the configuration file
+                await jsonController.UpdateAsync("AccessToken", refresh.AccessToken);
+                await twitchHttpClient.UpdateOAuthToken(refresh.AccessToken);
                 return true;
             }
-            else
+            catch (BadRequestException ex)
             {
-                try
-                {
-                    // Refresh the access token because it's invalid
-                    api.Settings.ClientId = configuration["ClientId"];
-                    AnsiConsole.Markup("[yellow]AccessToken is invalid, refreshing for a new token...[/]\n");
-                    TwitchLib.Api.Auth.RefreshResponse refresh = await api.Auth.RefreshAuthTokenAsync(RefreshToken, configuration["ClientSecret"], configuration["ClientId"]);
-                    api.Settings.AccessToken = refresh.AccessToken;
-                    // Update the access token in the configuration file
-                    await jsonController.UpdateAsync("AccessToken", refresh.AccessToken);
-                    await twitchHttpClient.UpdateOAuthToken(refresh.AccessToken);
-                    return true;
-                }
-                catch (BadRequestException ex)
-                {
-                    Console.WriteLine(ex.Message); // Log any exceptions during the refresh process
-                    return false;
-                }
+                Console.WriteLine(ex.Message); // Log any exceptions during the refresh process
+                return false;
             }
-        }
-
-        // Method to start the main application
-        private async Task StartApp()
-        {
-            // Validate the Twitch configuration before proceeding
-            bool twitchConfigured = await ValidateTwitchConfiguration();
-
-            if (!twitchConfigured)
-            {
-                AnsiConsole.Markup("[bold red]\nError: Twitch Configuration is incomplete.\n[/]");
-                return;
-            }
-            else
-            {
-                // Start polling the Hue bridge for the link button press and connect to the Twitch EventSub
-                bool result = await hueController.StartPollingForLinkButtonAsync("YukiDanceParty", "MyDevice", configuration["bridgeIp"], configuration["AppKey"]);
-                if (result)
-                {
-                    const string ws = "wss://eventsub.wss.twitch.tv/ws"; // Twitch EventSub websocket endpoint
-                    const string localws = "ws://127.0.0.1:8080/ws"; // Local websocket for development
-                    string wsstring = argsService.Args.FirstOrDefault() == "dev" ? localws : ws; // Choose the appropriate websocket based on the environment
-                    await eventSubListener.ValidateAndConnectAsync(new Uri(wsstring)); // Connect to the EventSub websocket
-                    await eventSubListener.ListenForEventsAsync(); // Start listening for events
-                }
-            }
-        }
-
-        // Method to configure Twitch OAuth tokens
-        private async Task ConfigureTwitchTokens()
-        {
-            // List of scopes the application will request
-            List<string> scopes = ["channel:bot", "user:read:chat", "channel:read:redemptions", "user:write:chat"];
-            string state = RandomStringGenerator.GenerateRandomString(); // Generate a random state for OAuth security
-            api.Settings.ClientId = configuration["ClientId"];
-            AnsiConsole.Markup($"Please authorize here:\n[link={getAuthorizationCodeUrl(configuration["ClientId"], configuration["RedirectUri"], scopes, state)}]Authorization Link[/]\n");
-
-            // Listen for the OAuth callback and retrieve the authorization code
-            Authorization? auth = await webServer.ListenAsync(state);
-
-            if (auth != null)
-            {
-                // Exchange the authorization code for access and refresh tokens
-                TwitchLib.Api.Auth.AuthCodeResponse? resp = await api.Auth.GetAccessTokenFromCodeAsync(auth.Code, configuration["ClientSecret"], configuration["RedirectUri"]);
-                api.Settings.AccessToken = resp.AccessToken;
-                await jsonController.UpdateAsync("AccessToken", resp.AccessToken);
-                await jsonController.UpdateAsync("RefreshToken", resp.RefreshToken);
-
-                var user = (await api.Helix.Users.GetUsersAsync()).Users[0]; // Get user details from Twitch
-
-                // Display a success message with the user information
-                AnsiConsole.Write(
-                    new Panel($"[bold green]Authorization success![/]\n\n[bold aqua]User:[/] {user.DisplayName} (id: {user.Id})\n[bold aqua]Scopes:[/] :{string.Join(", ", resp.Scopes)}")
-                    .BorderColor(Color.Green)
-                );
-            }
-        }
-
-        // Method to generate the authorization URL for OAuth
-        private string getAuthorizationCodeUrl(string clientId, string redirectUri, List<string> scopes, string state)
-        {
-            var scopesStr = string.Join('+', scopes); // Join the requested scopes
-            var encodedRedirectUri = System.Web.HttpUtility.UrlEncode(redirectUri); // URL-encode the redirect URI
-            return "https://id.twitch.tv/oauth2/authorize?" +
-                $"client_id={clientId}&" +
-                $"force_verify=true&" +
-                $"redirect_uri={encodedRedirectUri}&" +
-                "response_type=code&" +
-                $"scope={scopesStr}&" +
-                $"state={state}";
         }
     }
 
-    // A simple implementation of the XORShift32 PRNG
-    public static class XorShift32
+    // Method to start the main application
+    private async Task StartApp()
     {
-        public static uint Next(uint seed)
+        // Validate the Twitch configuration before proceeding
+        bool twitchConfigured = await ValidateTwitchConfiguration();
+
+        if (!twitchConfigured)
         {
-            uint x = seed;
-            x ^= x << 13;
-            x ^= x >> 17;
-            x ^= x << 5;
-            seed = x;
-            return x;
+            AnsiConsole.Markup("[bold red]\nError: Twitch Configuration is incomplete.\n[/]");
+            return;
+        }
+        else
+        {
+            // Start polling the Hue bridge for the link button press and connect to the Twitch EventSub
+            bool result = await hueController.StartPollingForLinkButtonAsync("YukiDanceParty", "MyDevice", configuration["bridgeIp"], configuration["AppKey"]);
+            if (result)
+            {
+                const string ws = "wss://eventsub.wss.twitch.tv/ws"; // Twitch EventSub websocket endpoint
+                const string localws = "ws://127.0.0.1:8080/ws"; // Local websocket for development
+                string wsstring = argsService.Args.FirstOrDefault() == "dev" ? localws : ws; // Choose the appropriate websocket based on the environment
+
+                await eventSubListener.ValidateAndConnectAsync(new Uri(wsstring)); // Connect to the EventSub websocket
+                await eventSubListener.ListenForEventsAsync(); // Start listening for events
+            }
         }
     }
-
-    // A utility class to generate random
-    public static class RandomStringGenerator
+    // Method to configure Twitch OAuth tokens
+    private async Task<bool> ConfigureTwitchTokens()
     {
-        public static string GenerateRandomString(int length = 32)
+        string clientId = configuration["ClientId"];
+        string clientSecret = configuration["ClientSecret"];
+
+        // Check if ClientId or ClientSecret is missing
+        if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
         {
-            const string chars = "7jXb2NEFp9M3hCRKZwBvLziPDSUq5Ixl4y1GtQJcr0HmkOnW6gsToA8fYdeVua";
-            var stringBuilder = new StringBuilder(length);
+            AnsiConsole.Markup("[bold red]ClientId or ClientSecret not found in configuration file![/]\n");
 
-            // Initialize XORShift with a seed (you can use any uint seed)
-
-            for (int i = 0; i < length; i++)
+            // Prompt user for missing ClientId
+            if (string.IsNullOrEmpty(clientId))
             {
-                // Generate a random number and map it to a character in the chars array
-                uint randomValue = XorShift32.Next((uint)DateTime.Now.Ticks);
-                stringBuilder.Append(chars[(int)(randomValue % chars.Length)]);
+                clientId = AnsiConsole.Ask<string>("[yellow]Please enter the ClientId:[/]");
+                await jsonController.UpdateAsync("ClientId", clientId); // Save to appsettings.json
             }
 
-            return stringBuilder.ToString();
+            // Prompt user for missing ClientSecret
+            if (string.IsNullOrEmpty(clientSecret))
+            {
+                clientSecret = AnsiConsole.Ask<string>("[yellow]Please enter the ClientSecret:[/]");
+                await jsonController.UpdateAsync("ClientSecret", clientSecret); // Save to appsettings.json
+            }
+
+            AnsiConsole.Markup("[green]ClientId and ClientSecret have been updated in appsettings.json.[/]\n");
         }
+        // List of scopes the application will request
+        List<string> scopes = ["channel:bot", "user:read:chat", "channel:read:redemptions", "user:write:chat"];
+        string state = RandomStringGenerator.GenerateRandomString(); // Generate a random state for OAuth security
+        api.Settings.ClientId = configuration["ClientId"];
+
+        AnsiConsole.Markup($"Please authorize here:\n[link={GetAuthorizationCodeUrl(configuration["ClientId"], configuration["RedirectUri"], scopes, state)}]Authorization Link[/]\n");
+        var linkAccessibility = AnsiConsole.Confirm("[yellow]If you are unable to click the link, would you like to see the raw URL?[/]");
+
+        if (linkAccessibility)
+        {
+            // Provide the raw URL as fallback
+            string rawLink = GetAuthorizationCodeUrl(configuration["ClientId"], configuration["RedirectUri"], scopes, state);
+            AnsiConsole.Markup($"[bold green]Raw URL:[/] {rawLink}\n");
+        }
+        // Listen for the OAuth callback and retrieve the authorization code
+        AuthorizationResult? auth = await webServer.WaitForAuthorizationAsync(state);
+
+        if (auth.IsSuccess)
+        {
+            // Exchange the authorization code for access and refresh tokens
+            TwitchLib.Api.Auth.AuthCodeResponse? resp = await api.Auth.GetAccessTokenFromCodeAsync(auth.Code, configuration["ClientSecret"], configuration["RedirectUri"]);
+            api.Settings.AccessToken = resp.AccessToken;
+            await jsonController.UpdateAsync("AccessToken", resp.AccessToken);
+            await jsonController.UpdateAsync("RefreshToken", resp.RefreshToken);
+
+            var user = (await api.Helix.Users.GetUsersAsync()).Users[0]; // Get user details from Twitch
+            await jsonController.UpdateAsync("ChannelId", user.Id);
+
+            // Display a success message with the user information
+            AnsiConsole.Write(
+                new Panel($"[bold green]Authorization success![/]\n\n[bold aqua]User:[/] {user.DisplayName} (id: {user.Id})\n[bold aqua]Scopes:[/] :{string.Join(", ", resp.Scopes)}")
+                .BorderColor(Color.Green)
+            );
+            return true;
+        }
+        return false;
     }
 
+    // Method to generate the authorization URL for OAuth
+    private static string GetAuthorizationCodeUrl(string clientId, string redirectUri, List<string> scopes, string state)
+    {
+        var scopesStr = string.Join('+', scopes); // Join the requested scopes
+        var encodedRedirectUri = System.Web.HttpUtility.UrlEncode(redirectUri); // URL-encode the redirect URI
+        return "https://id.twitch.tv/oauth2/authorize?" +
+            $"client_id={clientId}&" +
+            $"force_verify=true&" +
+            $"redirect_uri={encodedRedirectUri}&" +
+            "response_type=code&" +
+            $"scope={scopesStr}&" +
+            $"state={state}";
+    }
+}
+
+// A simple implementation of the XORShift32 PRNG
+public static class XorShift32
+{
+    public static uint Next(uint seed)
+    {
+        uint x = seed;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        seed = x;
+        return x;
+    }
+}
+
+// A utility class to generate random
+public static class RandomStringGenerator
+{
+    public static string GenerateRandomString(int length = 32)
+    {
+        const string chars = "7jXb2NEFp9M3hCRKZwBvLziPDSUq5Ixl4y1GtQJcr0HmkOnW6gsToA8fYdeVua";
+        var stringBuilder = new StringBuilder(length);
+
+        // Initialize XORShift with a seed (you can use any uint seed)
+
+        for (int i = 0; i < length; i++)
+        {
+            // Generate a random number and map it to a character in the chars array
+            uint randomValue = XorShift32.Next((uint)DateTime.Now.Ticks);
+            stringBuilder.Append(chars[(int)(randomValue % chars.Length)]);
+        }
+
+        return stringBuilder.ToString();
+    }
 }
