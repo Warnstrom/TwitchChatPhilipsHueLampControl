@@ -363,9 +363,18 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
                     {
                         string ChatterUserName = payload["payload"]["event"]["chatter_user_name"].ToString();
                         string ChatterInput = payload["payload"]["event"]["message"]["text"].ToString();
-                        if (ChatterInput.Length < 10)
+                        if (ChatterInput.Length < 30)
                         {
-                            await HandleColorCommandAsync("left", CleanUserInput(ChatterInput), ChatterUserName);
+                            var SplittedInput = ChatterInput.Split(' ');
+
+                            if (SplittedInput[0] == "color")
+                            {
+                                await HandleColorCommandAsync("left", CleanUserInput(SplittedInput[1]), ChatterUserName);
+                            }
+                            else if (SplittedInput[0] == "effect")
+                            {
+                                HandleLampEffectsCommand("left", SplittedInput[1], ChatterUserName);
+                            }
                         }
                     }
                     break;
@@ -441,6 +450,25 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
         await hueController.SetLampColorAsync(lamp, finalColor); // Set the lamp color using the resolved RGB value.
     }
 
+    private void HandleLampEffectsCommand(string lamp, string effect, string RedeemUsername)
+    {
+        // Get all available effects
+        var availableEffects = hueController.GetAllAvailableEffects()
+                                             .Select(e => e.ToString().ToLowerInvariant())
+                                             .ToList();
+        // Check if the provided effect exists (case-insensitive)
+        if (availableEffects.Contains(effect.ToLowerInvariant()) || effect.ToLowerInvariant() == "alternate")
+        {
+            hueController.SetLampEffect(lamp, effect.ToLowerInvariant(), "subscription");
+        }
+        else
+        {
+            SendInvalidEffectMessageAsync(RedeemUsername, effect);
+            Console.WriteLine($"Effect '{effect}' is not a valid option. Available effects are: {string.Join(", ", availableEffects)}.");
+        }
+    }
+
+
     // Method to resolve the color input into an RGB color.
     private async Task<RGBColor> GetColorAsync(string color, string RedeemUsername)
     {
@@ -490,6 +518,25 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
             Console.WriteLine($"Failed to send message. Status code: {response.StatusCode}"); // Log failure to send message.
         }
     }
+
+    private async Task SendInvalidEffectMessageAsync(string RedeemUsername, string invalidEffect)
+    {
+        var errorMessage = new
+        {
+            broadcaster_id = configuration["ChannelId"],
+            sender_id = configuration["ChannelId"],
+            message = $"@{RedeemUsername} Unfortunately it appears that '{invalidEffect}' is not currently supported. Yuki chose a color for you instead. asecre3RacDerp",
+        };
+
+        string errorMessageJson = JsonConvert.SerializeObject(errorMessage);
+        var response = await twitchHttpClient.PostAsync("ChatMessage", errorMessageJson);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            Console.WriteLine($"Failed to send message. Status code: {response.StatusCode}"); // Log failure to send message.
+        }
+    }
+
 
     // Handle the "session_keepalive" event type (currently does nothing).
     private Task HandleKeepAliveAsync(JObject payload)

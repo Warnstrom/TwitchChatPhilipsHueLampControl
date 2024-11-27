@@ -188,6 +188,7 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
     // Method to render the start menu using Spectre.Console
     private async Task<byte> RenderStartMenu()
     {
+        await ValidateHueConfiguration();
         bool twitchConfigured = await ValidateTwitchConfiguration(); // Check if Twitch is configured
                                                                      //await ValidateHueConfiguration(); // Validate Hue bridge configuration
 
@@ -253,39 +254,74 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
     // Method to validate Hue bridge configurationprivate async Task<bool> ValidateTwitchConfiguration()
     private async Task<bool> ValidateHueConfiguration()
     {
-        string localBridgeIp = configuration["bridgeIp"];
-        string localBridgeId = configuration["bridgeId"];
-        string localAppKey = configuration["AppKey"];
-        if (string.IsNullOrEmpty(localBridgeIp) || string.IsNullOrEmpty(localBridgeId))
+        try
         {
-            // TODO: Configuration doesn't properly update when updating the Json configuration file
-            // Need to find a better solution than to access the json file directly
-            await hueController.DiscoverBridgeAsync();
-            localBridgeIp = await jsonController.GetValueByKeyAsync<string>("bridgeIp");
-            localBridgeId = await jsonController.GetValueByKeyAsync<string>("bridgeId");
+            string bridgeIp = await GetOrDiscoverBridgeIpAsync();
+            string bridgeId = await GetOrDiscoverBridgeIdAsync();
+            string appKey = configuration["AppKey"];
+
+            if (string.IsNullOrEmpty(bridgeIp))
+            {
+                AnsiConsole.Markup("[red]Bridge IP is missing. Unable to proceed with configuration.[/]\n");
+                return false;
+            }
+
+            //await EnsureCertificateExistsAsync(bridgeIp);
+
+            return true;
         }
-        if (string.IsNullOrEmpty(localBridgeIp))
+        catch (Exception ex)
         {
-            AnsiConsole.Markup("[red]Bridge IP is missing, cannot configure the certificate.[/]\n");
+            AnsiConsole.MarkupLine($"[bold red]Error during Hue configuration validation: {ex.Message}[/]");
             return false;
         }
-
-        if (!File.Exists("huebridge_cacert.pem"))
-        {
-            await ConfigureCertificate(localBridgeIp);
-        }
-
-        bool isValidBridgeIp = await bridgeValidator.ValidateBridgeIpAsync(localBridgeIp, localBridgeId, localAppKey);
-        if (!isValidBridgeIp && !string.IsNullOrEmpty(localAppKey))
-        {
-            AnsiConsole.MarkupLine($"[bold yellow]Invalid Bridge IP: {localBridgeIp}[/]");
-            AnsiConsole.MarkupLine($"[bold yellow]Discovering new Bridge IP...[/]");
-            await hueController.DiscoverBridgeAsync();
-            return false;
-        }
-
-        return true;
     }
+
+    private async Task<string> GetOrDiscoverBridgeIpAsync()
+    {
+        string bridgeIp = configuration["bridgeIp"];
+        if (string.IsNullOrEmpty(bridgeIp))
+        {
+            AnsiConsole.MarkupLine("[yellow]Bridge IP missing. Discovering...[/]");
+            await hueController.DiscoverBridgeAsync();
+            bridgeIp = await jsonController.GetValueByKeyAsync<string>("bridgeIp");
+        }
+        return bridgeIp;
+    }
+
+    private async Task<string> GetOrDiscoverBridgeIdAsync()
+    {
+        string bridgeId = configuration["bridgeId"];
+        if (string.IsNullOrEmpty(bridgeId))
+        {
+            AnsiConsole.MarkupLine("[yellow]Bridge ID missing. Discovering...[/]");
+            await hueController.DiscoverBridgeAsync();
+            bridgeId = await jsonController.GetValueByKeyAsync<string>("bridgeId");
+        }
+        return bridgeId;
+    }
+
+    private async Task EnsureCertificateExistsAsync(string bridgeIp)
+    {
+        const string certFileName = "huebridge_cacert.pem";
+        if (!File.Exists(certFileName))
+        {
+            AnsiConsole.MarkupLine("[yellow]Certificate not found. Configuring...[/]");
+            await ConfigureCertificate(bridgeIp);
+        }
+    }
+
+    private async Task<bool> ValidateBridgeConnectionAsync(string bridgeIp, string bridgeId, string appKey)
+    {
+        bool isValid = await bridgeValidator.ValidateBridgeIpAsync(bridgeIp, bridgeId, appKey);
+        if (!isValid && !string.IsNullOrEmpty(appKey))
+        {
+            AnsiConsole.MarkupLine($"[bold yellow]Invalid Bridge IP: {bridgeIp}[/]");
+            AnsiConsole.MarkupLine("[bold yellow]Attempting to rediscover bridge...[/]");
+        }
+        return isValid;
+    }
+
 
     private static async Task ConfigureCertificate(string bridgeIp)
     {
@@ -356,7 +392,7 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
             {
                 const string ws = "wss://eventsub.wss.twitch.tv/ws"; // Twitch EventSub websocket endpoint
                 const string localws = "ws://127.0.0.1:8080/ws"; // Local websocket for development
-                string wsstring = argsService.Args.FirstOrDefault() == "dev" ? localws : ws; // Choose the appropriate websocket based on the environment
+                string wsstring = ws; // Choose the appropriate websocket based on the environment
 
                 await eventSubListener.ValidateAndConnectAsync(new Uri(wsstring)); // Connect to the EventSub websocket
                 await eventSubListener.ListenForEventsAsync(); // Start listening for events

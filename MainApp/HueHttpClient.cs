@@ -6,21 +6,46 @@ using HueApi.Models.Requests;
 using HueApi.ColorConverters;
 using Spectre.Console;
 using Microsoft.Extensions.Configuration;
-using HueApi.Entertainment;
-using HueApi.Entertainment.Models;
 using HueApi.ColorConverters.Original.Extensions;
 using HueApi.Models;
 
 namespace TwitchChatHueControls;
+internal enum ColorPalette
+{
+    Default,
+    Subscription,
+    Raid,
+    Follow,
+    Bits,
+}
 
-public interface IHueController : IDisposable
+// Predefined XY color positions for common colors
+internal static class Xy
+{
+    // Primary Colors
+    internal static readonly XyPosition Red = new() { X = 0.6484, Y = 0.3309 };
+    internal static readonly XyPosition Green = new() { X = 0.2857, Y = 0.6429 };
+    internal static readonly XyPosition Blue = new() { X = 0.1546, Y = 0.0566 };
+    internal static readonly XyPosition Yellow = new() { X = 0.4951, Y = 0.5048 };
+    internal static readonly XyPosition Magenta = new() { X = 0.4324, Y = 0.2159 };
+    internal static readonly XyPosition Cyan = new() { X = 0.1546, Y = 0.1547 };
+    internal static readonly XyPosition Orange = new() { X = 0.5562, Y = 0.4084 };
+    internal static readonly XyPosition Peach = new() { X = 0.4800, Y = 0.3700 };
+    internal static readonly XyPosition Purple = new() { X = 0.3457, Y = 0.1700 };
+    internal static readonly XyPosition Teal = new() { X = 0.2000, Y = 0.3300 };
+    internal static readonly XyPosition SkyBlue = new() { X = 0.2000, Y = 0.2200 };
+    internal static readonly XyPosition HotPink = new() { X = 0.4800, Y = 0.2600 };
+    internal static readonly XyPosition LimeGreen = new() { X = 0.3000, Y = 0.6000 };
+}
+internal interface IHueController : IDisposable
 {
     Task DiscoverBridgeAsync(); // Discovers available Hue bridges
     Task<bool> TryRegisterApplicationAsync(string appName, string deviceName); // Registers the application with the Hue bridge
     Task<bool> StartPollingForLinkButtonAsync(string appName, string deviceName, string bridgeIp, string appKey); // Starts polling for the link button press on the Hue bridge
     Task GetLightsAsync(); // Retrieves the available lights from the Hue bridge
     Task SetLampColorAsync(string lamp, RGBColor color); // Sets the color of a specific lamp
-    Task AlternatingLampColors(string lampIdentifier, RGBColor color);
+    void SetLampEffect(string lampIdentifier, string lampEffects, string alternatingEffectType);
+    List<Effect> GetAllAvailableEffects();
 }
 
 // Implementation of the IHueController interface
@@ -34,6 +59,15 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
     private string _appKey; // Stores the app key used to authenticate with the Hue bridge
     private Timer _pollingTimer; // Timer for polling the link button status
     private TaskCompletionSource<bool> _pollingTaskCompletionSource; // Task completion source for waiting on the polling process
+
+    public static readonly Dictionary<ColorPalette, List<XyPosition>> ColorPalettes = new Dictionary<ColorPalette, List<XyPosition>>
+    {
+        { ColorPalette.Default, new List<XyPosition> { Xy.Blue, Xy.Green, Xy.Red } },
+        { ColorPalette.Subscription, new List<XyPosition> { Xy.Blue, Xy.Teal } },
+        { ColorPalette.Bits, new List<XyPosition> { Xy.Green, Xy.Yellow } },
+        { ColorPalette.Follow, new List<XyPosition> { Xy.Red, Xy.Blue } },
+        { ColorPalette.Raid, new List<XyPosition> { Xy.Orange, Xy.Purple}}
+    };
 
     // Discovers Hue bridges on the local network
     public async Task DiscoverBridgeAsync()
@@ -142,56 +176,8 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
             _pollingTaskCompletionSource.SetResult(true);
         }
 
-        return await _pollingTaskCompletionSource.Task; // Wait for polling to complete
+        return await _pollingTaskCompletionSource.Task; // Wait for polling to complBaseEffect.ete
     }
-
-    public async Task SetupHueStreaming()
-    {
-        try
-        {
-            // Retrieve the StreamingHueClientKey from your configuration
-            string streamingHueClientKey = await jsonController.GetValueByKeyAsync<string>("HueStreamingClientKey");
-            if (string.IsNullOrEmpty(streamingHueClientKey))
-            {
-                Console.WriteLine("[Error] HueStreamingClientKey is missing or invalid.");
-                return;
-            }
-
-            // Initialize the StreamingHueClient with the necessary configuration
-            var client = new StreamingHueClient(configuration["bridgeIp"], configuration["AppKey"], streamingHueClientKey);
-
-            // Get the entertainment groups
-            var entertainmentGroups = await client.LocalHueApi.GetEntertainmentGroups();
-            var group = entertainmentGroups?.Data.FirstOrDefault();
-
-            // Handle the case where no entertainment group is found
-            if (group == null)
-            {
-                Console.WriteLine("[Error] No entertainment group found.");
-                return;
-            }
-
-            // Create the streaming group with the fetched group channels
-            var entGroup = new StreamingGroup(group.Channels);
-
-            // Attempt to connect to the streaming group
-            client.ConnectAsync(group.Id);
-
-            Console.WriteLine("[Info] Connected successfully. Starting auto-update...");
-
-            // Start auto-updating the entertainment group
-            _ = client.AutoUpdateAsync(entGroup, CancellationToken.None);
-
-            // Optionally, log that the auto-update has started
-            Console.WriteLine("[Info] Auto-update started for the entertainment group.");
-        }
-        catch (Exception ex)
-        {
-            // Log any unexpected exceptions
-            Console.WriteLine($"[Error] An exception occurred: {ex.Message}");
-        }
-    }
-
 
     // Retrieves the available lights from the Hue bridge and displays them in a table
     public async Task GetLightsAsync()
@@ -228,7 +214,7 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
     public async Task SetLampColorAsync(string lampIdentifier, RGBColor color)
     {
         // Check if the lamp exists in the light map
-        if (_lightMap.TryGetValue(GetLampName(lampIdentifier), out var lightId))
+        if (_lightMap.TryGetValue(GetLampName(lampIdentifier), out Guid lightId))
         {
             // Create the update command to set the color
             var command = new UpdateLight().SetColor(color);
@@ -239,43 +225,123 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
             AnsiConsole.MarkupLine($"[bold red]Lamp '{lampIdentifier}' not found in the light map.[/]");
         }
     }
+    private static UpdateLight CreateAlternatingEffect(
+          ColorPalette palette = ColorPalette.Default,
+          int durationMs = 5000)
+    {
+        // Use custom colors if provided, otherwise use the selected palette
+        var colors = ColorPalettes[palette];
 
+        // Ensure we have at least two colors
+        if (colors == null || colors.Count < 2)
+        {
+            throw new ArgumentException("At least two colors are required for alternating effect");
+        }
 
-    public async Task AlternatingLampColors(string lampIdentifier, RGBColor color)
+        return new UpdateLight
+        {
+            Signaling = new SignalingUpdate
+            {
+                Signal = Signal.alternating,
+                Duration = durationMs,
+                Colors = colors.Select(xyPos => new HueApi.Models.Color { Xy = xyPos }).ToList()
+            }
+        };
+    }
+
+    private async Task AlternatingEffect(Guid lightId, string alternatingEffectType)
+    {
+        ColorPalette palette = alternatingEffectType.ToLowerInvariant() switch
+        {
+            "default" => ColorPalette.Default,
+            "subscription" => ColorPalette.Subscription,
+            "raid" => ColorPalette.Raid,
+            "bits" => ColorPalette.Bits,
+            "follow" => ColorPalette.Follow,
+            _ => ColorPalette.Default // Fallback to default if no match
+        };
+
+        var customUpdate = CreateAlternatingEffect(
+            palette,
+            durationMs: 6000
+        );
+
+        await SendLightUpdateAsync(lightId, customUpdate);
+    }
+    public async void SetLampEffect(string lampIdentifier, string lampEffects, string alternatingEffectType = null)
     {
         // Check if the lamp exists in the light map
-        if (_lightMap.TryGetValue(GetLampName(lampIdentifier), out var lightId))
+        if (_lightMap.TryGetValue(GetLampName(lampIdentifier), out Guid lightId))
         {
-            // Create the update command to set the color
-            UpdateLight req = new()
+            try
             {
-                Signaling = new SignalingUpdate
+                switch (lampEffects)
                 {
-                    Signal = Signal.alternating,
-                    Duration = 60000,
-                    Colors = new List<HueApi.Models.Color>
-                    {
-                        new HueApi.Models.Color { Xy = new XyPosition { X = 0.456, Y = 0.123, }},
-                        new HueApi.Models.Color { Xy = new XyPosition { X = 0.333, Y = 0.712, }}
-                    }
+                    case "prism":
+                        PrismEffect(lightId);
+                        break;
+                    case "fire":
+                        FireEffect(lightId);
+                        break;
+                    case "candle":
+                        CandleEffect(lightId);
+                        break;
+                    case "alternate":
+                        AlternatingEffect(lightId, alternatingEffectType);
+                        break;
                 }
-            };
-            UpdateLight req1 = new()
+            }
+            catch (Exception ex)
             {
-                Effects = new Effects
-                {
-                    Effect = Effect.prism,
-                }
-            };
-            HuePutResponse res = await _hueClient.UpdateLightAsync(lightId, req1); // Send the command to the Hue bridge
-            Console.WriteLine(res.Data.First().ToString());
-            Console.WriteLine(res.Errors.First().Description);
+                AnsiConsole.MarkupLine($"[bold red]Error updating lamp '{lampIdentifier}': {ex.Message}[/]");
+            }
         }
         else
         {
             AnsiConsole.MarkupLine($"[bold red]Lamp '{lampIdentifier}' not found in the light map.[/]");
         }
     }
+
+    private void PrismEffect(Guid lightId)
+    {
+        UpdateLight prismEffectUpdate = CreateEffectUpdate(Effect.prism);
+        SendLightUpdateAsync(lightId, prismEffectUpdate);
+    }
+
+    private void FireEffect(Guid lightId)
+    {
+        UpdateLight fireEffectUpdate = CreateEffectUpdate(Effect.fire);
+        SendLightUpdateAsync(lightId, fireEffectUpdate);
+    }
+
+    private void CandleEffect(Guid lightId)
+    {
+        UpdateLight candleEffectUpdate = CreateEffectUpdate(Effect.candle);
+        SendLightUpdateAsync(lightId, candleEffectUpdate);
+    }
+
+    private async Task<HuePutResponse> SendLightUpdateAsync(Guid lightId, UpdateLight update)
+    {
+        return await _hueClient.UpdateLightAsync(lightId, update);
+    }
+
+    public List<Effect> GetAllAvailableEffects()
+    {
+        return Enum.GetValues(typeof(Effect)).Cast<Effect>().ToList();
+    }
+
+    private UpdateLight CreateEffectUpdate(Effect effect)
+    {
+        return new UpdateLight
+        {
+            Effects = new Effects
+            {
+                Effect = effect
+            }
+        };
+    }
+
+
     // Maps input identifiers (e.g., "left", "right") to specific lamp names
     private string GetLampName(string lamp) => lamp switch
     {
