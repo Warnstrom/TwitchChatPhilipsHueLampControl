@@ -1,23 +1,15 @@
 using System.Net.WebSockets;
-using System.Text;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Spectre.Console;
 using HueApi.ColorConverters;
 using Microsoft.Extensions.Configuration;
+using TwitchChatHueControls.Models;
+
 namespace TwitchChatHueControls;
 
 // Classes representing the event payload structure for subscribing to events.
-public class SubscribeEventPayload
-{
-    public string? type { get; set; }         // Type of event to subscribe to.
-    public string? version { get; set; }      // Version of the event subscription.
-    public Condition? condition { get; set; } // Conditions required for the event.
-    public Transport? transport { get; set; } // Transport details for event subscription.
-}
-public record Condition(string? broadcaster_user_id, string? user_id);
-public record Transport(string? method, string? session_id);
+
 // Interface for the Twitch EventSub listener.
 internal interface ITwitchEventSubListener
 {
@@ -30,6 +22,12 @@ internal class TwitchEventSubListener(IConfiguration configuration, TwitchLib.Ap
 IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClient twitchHttpClient,
 IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : ITwitchEventSubListener
 {
+    private readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        DictionaryKeyPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
     private readonly Regex ValidHexCodePattern = new Regex("([0-9a-fA-F]{6})$"); // Regex pattern to validate hex color codes.
     private ClientWebSocket? _webSocket;                                         // Web socket for connecting to Twitch EventSub.
                                                                                  // Method to connect to the Twitch EventSub websocket.
@@ -81,70 +79,43 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
     // Subscribe to channel point reward redemptions.
     private async Task SubscribeToChannelPointRewardsAsync(string sessionId)
     {
-        var eventPayload = new SubscribeEventPayload
-        {
-            type = "channel.channel_points_custom_reward_redemption.add", // Event type for channel points redemption.
-            version = "1",
-            condition = new Condition
-            (
-                configuration["ChannelId"], null
-            ),
-            transport = new Transport
-            (
-                "websocket",
-                sessionId
-            )
-        };
-
+        Condition condition = new(configuration["ChannelId"], null);
+        Transport transport = new("websocket", sessionId);
+        SubscribeEventPayload eventPayload = new("channel.channel_points_custom_reward_redemption.add", "1", condition, transport);
         await SendMessageAsync(eventPayload); // Send the subscription request.
     }
 
     // Subscribe to stream online notifications.
     private async Task SubscribeToStreamOnlineNotificationsAsync(string sessionId)
     {
-        var eventPayload = new SubscribeEventPayload
-        {
-            type = "stream.online", // Event type for stream online notification.
-            version = "1",
-            condition = new Condition(configuration["ChannelId"], null),
-            transport = new Transport("websocket", sessionId)
-        };
-
+        Condition condition = new(configuration["ChannelId"], null);
+        Transport transport = new("websocket", sessionId);
+        SubscribeEventPayload eventPayload = new("stream.online", "1", condition, transport);
         await SendMessageAsync(eventPayload); // Send the subscription request.
     }
 
     // Subscribe to stream offline notifications.
     private async Task SubscribeToStreamOfflineNotificationsAsync(string sessionId)
     {
-        var eventPayload = new SubscribeEventPayload
-        {
-            type = "stream.offline", // Event type for stream offline notification.
-            version = "1",
-            condition = new Condition(configuration["ChannelId"], null),
-            transport = new Transport("websocket", sessionId)
-        };
-
+        Condition condition = new(configuration["ChannelId"], null);
+        Transport transport = new("websocket", sessionId);
+        SubscribeEventPayload eventPayload = new("stream.offline", "1", condition, transport);
         await SendMessageAsync(eventPayload); // Send the subscription request.
     }
 
     // Subscribe to chat messages for local testing (not used in production).
     private async Task SubscribeToChannelChatMessageAsync(string sessionId)
     {
-        var eventPayload = new SubscribeEventPayload
-        {
-            type = "channel.chat.message", // Event type for chat messages.
-            version = "1",
-            condition = new Condition(configuration["ChannelId"], configuration["ChannelId"]),
-            transport = new Transport("websocket", sessionId)
-        };
-
+        Condition condition = new(configuration["ChannelId"], configuration["ChannelId"]);
+        Transport transport = new("websocket", sessionId);
+        SubscribeEventPayload eventPayload = new("channel.chat.message", "1", condition, transport);
         await SendMessageAsync(eventPayload); // Send the subscription request.
     }
 
     // Method to send a subscription request to the Twitch API.
     private async Task SendMessageAsync(SubscribeEventPayload eventPayload)
     {
-        string payload = JsonConvert.SerializeObject(eventPayload);
+        string payload = JsonSerializer.Serialize(eventPayload, _jsonSerializerOptions);
         try
         {
             HttpResponseMessage response = await twitchHttpClient.PostAsync("AddSubscription", payload);
@@ -191,12 +162,12 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
                 // Handle text messages received from the WebSocket.
                 if (result.MessageType == WebSocketMessageType.Text)
                 {
-                    await messageBuffer.WriteAsync(buffer, 0, result.Count); // Write the received data to the buffer.
-                                                                             // If this is the last fragment, process the full message.
+                    await messageBuffer.WriteAsync(buffer.AsMemory(0, result.Count), CancellationToken.None);
+                    // If this is the last fragment, process the full message.
                     if (result.EndOfMessage)
                     {
                         messageBuffer.Seek(0, SeekOrigin.Begin); // Reset the stream position.
-                        var payloadJson = await ReadMessageAsync(messageBuffer); // Read the full message as a JSON string.
+                        string payloadJson = await ReadMessageAsync(messageBuffer); // Read the full message as a JSON string.
                         await HandleEventNotificationAsync(payloadJson); // Handle the parsed message.
                         messageBuffer.SetLength(0); // Clear the message buffer for the next message.
                     }
@@ -221,6 +192,13 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
         {
             messageBuffer.Dispose(); // Dispose of the message buffer when finished.
         }
+    }
+
+    // Helper method to read the full message from the message buffer.
+    private static async Task<string> ReadMessageAsync(Stream messageBuffer)
+    {
+        using var reader = new StreamReader(messageBuffer, leaveOpen: true);
+        return await reader.ReadToEndAsync();
     }
 
     // Method to attempt reconnection to the WebSocket if the connection is lost.
@@ -265,42 +243,40 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
         AnsiConsole.MarkupLine("[bold red]Max reconnection attempts reached. Could not reconnect to WebSocket.[/]");
     }
 
-    // Helper method to read the full message from the message buffer.
-    private static async Task<string> ReadMessageAsync(Stream messageBuffer)
-    {
-        using var reader = new StreamReader(messageBuffer, Encoding.UTF8, leaveOpen: true);
-        return await reader.ReadToEndAsync();
-    }
-
     // Method to handle event notifications received from the WebSocket.
     private async Task HandleEventNotificationAsync(string payloadJson)
     {
-        var payload = JObject.Parse(payloadJson); // Parse the JSON payload.
-        string MessageType = (string)payload["metadata"]["message_type"]; // Extract the message type.
-
-        // Dictionary mapping message types to their respective handler methods.
-        var handlers = new Dictionary<string, Func<JObject, Task>>
+        if (argsService.Args.FirstOrDefault() == "dev")
         {
-            { "session_welcome", HandleSessionWelcomeAsync },
-            { "session_keepalive", HandleKeepAliveAsync },
-            { "session_reconnect", HandleReconnectAsync },
-            { "notification", HandleNotificationAsync },
-        };
-
-        // Check if a handler exists for the received message type.
-        if (handlers.TryGetValue(MessageType, out var handler))
-        {
-            await handler(payload); // Invoke the appropriate handler.
+            Console.WriteLine(payloadJson);
         }
-        else
+
+        var message = JsonDocument.Parse(payloadJson);
+        var metadata = message.RootElement.GetProperty("metadata");
+        var messageType = metadata.GetProperty("message_type").GetString();
+        // Dictionary mapping message types to their respective handler methods.
+        switch (messageType)
         {
-            Console.WriteLine("Unhandled message type: " + MessageType); // Log unhandled message types.
+            case "session_welcome":
+                await HandleSessionWelcomeAsync(message);
+                break;
+            case "session_keepalive":
+                await HandleKeepAliveAsync(message);
+                break;
+            case "session_reconnect":
+                await HandleReconnectAsync(message);
+                break;
+            case "notification":
+                await HandleNotificationAsync(message);
+                break;
         }
     }
 
     // Method to handle the "session_reconnect" message type.
-    private async Task HandleReconnectAsync(JObject payload)
+    private async Task HandleReconnectAsync(JsonDocument payload)
     {
+        var data = JsonSerializer.Deserialize<EventSubWebsocketSessionInfoMessage>(payload, _jsonSerializerOptions);
+
         try
         {
             // If the WebSocket is open, close it gracefully before reconnecting.
@@ -310,9 +286,8 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
                 AnsiConsole.MarkupLine("[bold yellow]Disconnecting from Twitch Redemption Service[/]");
                 DisposeWebSocket(); // Dispose of the existing WebSocket.
             }
-
             // Extract the reconnect URL from the payload.
-            string reconnectUrl = (string)payload["payload"]["session"]["reconnect_url"];
+            string reconnectUrl = data.Payload.Session.ReconnectUrl;
 
             // Validate and connect using the new reconnect URL.
             if (Uri.TryCreate(reconnectUrl, UriKind.Absolute, out Uri? uri))
@@ -328,9 +303,10 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
     }
 
     // Method to handle the "session_welcome" message type.
-    private async Task HandleSessionWelcomeAsync(JObject payload)
+    private async Task HandleSessionWelcomeAsync(JsonDocument payload)
     {
-        string sessionId = (string)payload["payload"]["session"]["id"]; // Extract the session ID.
+        var data = JsonSerializer.Deserialize<EventSubWebsocketSessionInfoMessage>(payload, _jsonSerializerOptions);
+        string sessionId = data.Payload.Session.Id;
 
         if (argsService.Args.FirstOrDefault() == "dev")
         {
@@ -343,46 +319,61 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
         await SubscribeToStreamOfflineNotificationsAsync(sessionId);
         await SubscribeToChannelChatMessageAsync(sessionId);
     }
-
-    // Method to handle notifications received from Twitch.
-    private async Task HandleNotificationAsync(JObject payload)
+    private static string ExtractEventType(JsonDocument payload)
     {
         try
         {
-            // Extract the event type from the payload.
-            string eventType = payload["payload"]["subscription"]["type"].ToString();
+            return payload.RootElement
+                .GetProperty("payload")
+                .GetProperty("subscription")
+                .GetProperty("type").ToString();
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
 
-            // Determine how to handle the event based on its type.
+    // Method to handle notifications received from Twitch.
+    private async Task HandleNotificationAsync(JsonDocument payload)
+    {
+        string eventType = ExtractEventType(payload);
+
+        try
+        {
             switch (eventType)
             {
                 case "channel.channel_points_custom_reward_redemption.add":
-                    await HandleCustomRewardRedemptionAsync(payload);
+                    Notification<ChannelPointsCustomRewardRedemptionAdd>? CustomRewardRedemptionAddPayload = JsonSerializer.Deserialize<Notification<ChannelPointsCustomRewardRedemptionAdd>>(payload, _jsonSerializerOptions);
+                    await HandleCustomRewardRedemptionAsync(CustomRewardRedemptionAddPayload);
                     break;
                 case "channel.chat.message":
+                    var data = JsonSerializer.Deserialize<Notification<TwitchChatMessage>>(payload, _jsonSerializerOptions);
                     if (argsService.Args.FirstOrDefault() == "dev")
                     {
-                        string ChatterUserName = payload["payload"]["event"]["chatter_user_name"].ToString();
-                        string ChatterInput = payload["payload"]["event"]["message"]["text"].ToString();
+                        string ChatterUsername = data.Payload.Event.chatter_user_name;
+                        string ChatterInput = data.Payload.Event.message.text;
+
                         if (ChatterInput.Length < 30)
                         {
                             var SplittedInput = ChatterInput.Split(' ');
 
                             if (SplittedInput[0] == "color")
                             {
-                                await HandleColorCommandAsync("left", CleanUserInput(SplittedInput[1]), ChatterUserName);
+                                await HandleColorCommandAsync("left", CleanUserInput(SplittedInput[1]), ChatterUsername);
                             }
                             else if (SplittedInput[0] == "effect")
                             {
-                                HandleLampEffectsCommand("left", SplittedInput[1], ChatterUserName);
+                                HandleLampEffectsCommand("left", SplittedInput[1], ChatterUsername);
                             }
                         }
                     }
                     break;
                 case "stream.online":
-                    await HandleStreamOnlineNotificationAsync(payload);
+                    //await HandleStreamOnlineNotificationAsync(payload);
                     break;
                 case "stream.offline":
-                    await HandleStreamOfflineNotificationAsync(payload);
+                    //await HandleStreamOfflineNotificationAsync(payload);
                     break;
                 default:
                     Console.WriteLine("Unhandled event type: " + eventType); // Log unhandled event types.
@@ -396,25 +387,25 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
     }
 
     // Method to handle the "stream.online" event type.
-    private async Task HandleStreamOnlineNotificationAsync(JObject payload)
+    private async Task HandleStreamOnlineNotificationAsync(Notification<StreamOnline>  payload)
     {
-        string StreamerUsername = payload["payload"]["event"]["broadcaster_user_name"].ToString(); // Get the broadcaster's username.
+        string StreamerUsername = payload.Payload.Event.broadcaster_user_name;
         Console.WriteLine($"{StreamerUsername} went live!"); // Log the stream online event.
     }
 
     // Method to handle the "stream.offline" event type.
-    private async Task HandleStreamOfflineNotificationAsync(JObject payload)
+    private async Task HandleStreamOfflineNotificationAsync(Notification<StreamOffline>  payload)
     {
-        string StreamerUsername = payload["payload"]["event"]["broadcaster_user_name"].ToString(); // Get the broadcaster's username.
+        string StreamerUsername = payload.Payload.Event.broadcaster_user_name;
         Console.WriteLine($"{StreamerUsername} went offline!"); // Log the stream offline event.
     }
 
     // Method to handle custom reward redemptions from Twitch.
-    private async Task HandleCustomRewardRedemptionAsync(JObject payload)
+    private async Task HandleCustomRewardRedemptionAsync(Notification<ChannelPointsCustomRewardRedemptionAdd> payload)
     {
-        string RewardTitle = payload["payload"]["event"]["reward"]["title"].ToString();
-        string UserInput = payload["payload"]["event"]["user_input"].ToString();
-        string RedeemUsername = payload["payload"]["event"]["user_name"].ToString();
+        string RewardTitle = payload.Payload.Event.reward.title;
+        string UserInput = payload.Payload.Event.user_input;
+        string RedeemUsername = payload.Payload.Event.user_name;
 
         // Handle specific reward titles.
         switch (RewardTitle)
@@ -450,7 +441,7 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
         await hueController.SetLampColorAsync(lamp, finalColor); // Set the lamp color using the resolved RGB value.
     }
 
-    private void HandleLampEffectsCommand(string lamp, string effect, string RedeemUsername)
+    private async void HandleLampEffectsCommand(string lamp, string effect, string RedeemUsername)
     {
         // Get all available effects
         var availableEffects = hueController.GetAllAvailableEffects()
@@ -463,7 +454,7 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
         }
         else
         {
-            SendInvalidEffectMessageAsync(RedeemUsername, effect);
+            await SendInvalidEffectMessageAsync(RedeemUsername, effect);
             Console.WriteLine($"Effect '{effect}' is not a valid option. Available effects are: {string.Join(", ", availableEffects)}.");
         }
     }
@@ -510,7 +501,7 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
             message = $"@{RedeemUsername} Unfortunately it appears that '{invalidColor}' is not currently supported, or an invalid hex code was provided. Yuki chose a color for you instead. asecre3RacDerp",
         };
 
-        string errorMessageJson = JsonConvert.SerializeObject(errorMessage);
+        string errorMessageJson = JsonSerializer.Serialize(errorMessage, _jsonSerializerOptions);
         var response = await twitchHttpClient.PostAsync("ChatMessage", errorMessageJson);
 
         if (!response.IsSuccessStatusCode)
@@ -528,7 +519,7 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
             message = $"@{RedeemUsername} Unfortunately it appears that '{invalidEffect}' is not currently supported. Yuki chose a color for you instead. asecre3RacDerp",
         };
 
-        string errorMessageJson = JsonConvert.SerializeObject(errorMessage);
+        string errorMessageJson = JsonSerializer.Serialize(errorMessage, _jsonSerializerOptions);
         var response = await twitchHttpClient.PostAsync("ChatMessage", errorMessageJson);
 
         if (!response.IsSuccessStatusCode)
@@ -539,8 +530,10 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
 
 
     // Handle the "session_keepalive" event type (currently does nothing).
-    private Task HandleKeepAliveAsync(JObject payload)
+    private Task HandleKeepAliveAsync(JsonDocument payload)
     {
+        // var data = JsonSerializer.Deserialize<EventSubWebsocketSessionKeepAlive>(payload, _jsonSerializerOptions);
+
         return Task.CompletedTask;
     }
 

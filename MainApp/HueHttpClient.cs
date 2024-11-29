@@ -20,7 +20,7 @@ internal enum ColorPalette
 }
 
 // Predefined XY color positions for common colors
-internal static class Xy
+internal readonly struct Xy
 {
     // Primary Colors
     internal static readonly XyPosition Red = new() { X = 0.6484, Y = 0.3309 };
@@ -37,6 +37,7 @@ internal static class Xy
     internal static readonly XyPosition HotPink = new() { X = 0.4800, Y = 0.2600 };
     internal static readonly XyPosition LimeGreen = new() { X = 0.3000, Y = 0.6000 };
 }
+
 internal interface IHueController : IDisposable
 {
     Task DiscoverBridgeAsync(); // Discovers available Hue bridges
@@ -176,7 +177,7 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
             _pollingTaskCompletionSource.SetResult(true);
         }
 
-        return await _pollingTaskCompletionSource.Task; // Wait for polling to complBaseEffect.ete
+        return await _pollingTaskCompletionSource.Task; // Wait for polling to complete
     }
 
     // Retrieves the available lights from the Hue bridge and displays them in a table
