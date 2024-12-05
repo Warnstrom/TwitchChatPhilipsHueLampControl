@@ -168,8 +168,6 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
         }
     }
 
-    // Method to listen for incoming events from the WebSocket connection.
-    // Method to listen for incoming events from the WebSocket connection.
     public async Task ListenForEventsAsync()
     {
         const int maxBufferSize = 1024; // Buffer size for incoming WebSocket messages.
@@ -562,9 +560,6 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
             if (SplittedInput[0] == "color")
             {
                 await HandleLampColorCommandAsync("left", CleanUserInput(SplittedInput[1]), ChatterUsername);
-            }
-            else if (SplittedInput[0] == "effect")
-            {
             }
         }
     }

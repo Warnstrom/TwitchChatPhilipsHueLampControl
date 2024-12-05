@@ -46,7 +46,6 @@ internal interface IHueController : IDisposable
     Task<bool> StartPollingForLinkButtonAsync(string appName, string deviceName, string bridgeIp, string appKey); // Starts polling for the link button press on the Hue bridge
     Task GetLightsAsync(); // Retrieves the available lights from the Hue bridge
     Task SetLampColorAsync(string lamp, RGBColor color); // Sets the color of a specific lamp
-    void SetLampEffect(string lampIdentifier, string lampEffects, string alternatingEffectType);
     List<Effect> GetAllAvailableEffects();
     List<UpdateLight> CreateCustomEffect(EffectPalette EffectType);
     Task RunEffect(List<UpdateLight> UpdateEffectUpdateLight, string? lamp, double durationMs = 5000);
@@ -67,9 +66,9 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
     public static readonly Dictionary<EffectPalette, List<XyPosition>> EffectPalettes = new Dictionary<EffectPalette, List<XyPosition>>
     {
         { EffectPalette.Default, new List<XyPosition> { Xy.Blue, Xy.Green, Xy.Red } },
-        { EffectPalette.Subscription, new List<XyPosition> { Xy.Blue, Xy.Red, Xy.Yellow, Xy.Purple, Xy.Yellow, Xy.Purple } },
+        { EffectPalette.Subscription, new List<XyPosition> { Xy.Blue, Xy.Red, } },
         { EffectPalette.Bits, new List<XyPosition> { Xy.Green, Xy.Yellow } },
-        { EffectPalette.Follow, new List<XyPosition> { Xy.Red, Xy.Blue } },
+        { EffectPalette.Follow, new List<XyPosition> { Xy.Yellow, Xy.Green } },
         { EffectPalette.Raid, new List<XyPosition> { Xy.Orange, Xy.Purple}}
     };
 
@@ -255,7 +254,6 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
 
     public async Task RunEffect(List<UpdateLight> updateEffectUpdateLight, string? lamp, double durationMs = 5000)
     {
-        // Get the light ID based on the lamp name
         if (!_lightMap.TryGetValue(GetLampName(lamp), out Guid lightId))
         {
             return;
@@ -279,50 +277,6 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
                 }
             }
         }
-    }
-
-
-
-    public async void SetLampEffect(string lampIdentifier, string lampEffects, string alternatingEffectType = null)
-    {
-        // Check if the lamp exists in the light map
-        if (_lightMap.TryGetValue(GetLampName(lampIdentifier), out Guid lightId))
-        {
-            switch (lampEffects)
-            {
-                case "prism":
-                    PrismEffect(lightId);
-                    break;
-                case "fire":
-                    FireEffect(lightId);
-                    break;
-                case "candle":
-                    CandleEffect(lightId);
-                    break;
-            }
-        }
-        else
-        {
-            AnsiConsole.MarkupLine($"[bold red]Lamp '{lampIdentifier}' not found in the light map.[/]");
-        }
-    }
-
-    private void PrismEffect(Guid lightId)
-    {
-        UpdateLight prismEffectUpdate = CreateEffectUpdate(Effect.prism);
-        SendLightUpdateAsync(lightId, prismEffectUpdate);
-    }
-
-    private void FireEffect(Guid lightId)
-    {
-        UpdateLight fireEffectUpdate = CreateEffectUpdate(Effect.fire);
-        SendLightUpdateAsync(lightId, fireEffectUpdate);
-    }
-
-    private void CandleEffect(Guid lightId)
-    {
-        UpdateLight candleEffectUpdate = CreateEffectUpdate(Effect.candle);
-        SendLightUpdateAsync(lightId, candleEffectUpdate);
     }
 
     private async Task<HuePutResponse> SendLightUpdateAsync(Guid lightId, UpdateLight update)
@@ -356,18 +310,6 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
     {
         return Enum.GetValues(typeof(Effect)).Cast<Effect>().ToList();
     }
-
-    private static UpdateLight CreateEffectUpdate(Effect effect)
-    {
-        return new UpdateLight
-        {
-            Effects = new Effects
-            {
-                Effect = effect
-            }
-        };
-    }
-
 
     // Maps input identifiers (e.g., "left", "right") to specific lamp names
     private static string GetLampName(string lamp) => lamp switch
