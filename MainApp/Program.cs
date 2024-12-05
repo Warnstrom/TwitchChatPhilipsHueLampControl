@@ -3,7 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Spectre.Console;
 using System.Text;
 using TwitchLib.Api.Core.Exceptions;
-
+using TwitchChatHueControls.Models;
 namespace TwitchChatHueControls;
 public class Program
 {
@@ -65,17 +65,19 @@ public class Program
             .AddSingleton<IBridgeValidator, BridgeValidator>()
             .AddScoped<ITwitchHttpClient, TwitchHttpClient>()
             .AddTransient<IVersionUpdateService, VersionUpdateService>()
+            .AddSingleton<IObservableQueue, ObservableQueue>()
             .AddSingleton<WebServer>()
             // Register the main application entry point
             .AddTransient<App>();
     }
     private static IConfigurationRoot BuildConfiguration(string settingsFile, string configFile)
     {
+        // TODO: Removed "ReloadOnChange" for the JsonFile
+        // Find a better solution for this, apparently this exceeds the max filewatchers allowed
         return new ConfigurationBuilder()
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile(string.IsNullOrEmpty(configFile) ? settingsFile : configFile,
-                optional: true,
-                reloadOnChange: true)
+                optional: true)
             .Build();
     }
     private static void DisplayErrorMessage(Exception ex)
@@ -392,7 +394,7 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
             {
                 const string ws = "wss://eventsub.wss.twitch.tv/ws"; // Twitch EventSub websocket endpoint
                 const string localws = "ws://127.0.0.1:8080/ws"; // Local websocket for development
-                string wsstring = ws; // Choose the appropriate websocket based on the environment
+                string wsstring = localws; // Choose the appropriate websocket based on the environment
 
                 await eventSubListener.ValidateAndConnectAsync(new Uri(wsstring)); // Connect to the EventSub websocket
                 await eventSubListener.ListenForEventsAsync(); // Start listening for events
@@ -427,7 +429,7 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
             AnsiConsole.Markup("[green]ClientId and ClientSecret have been updated in appsettings.json.[/]\n");
         }
         // List of scopes the application will request
-        List<string> scopes = ["channel:bot", "user:read:chat", "channel:read:redemptions", "user:write:chat"];
+        List<string> scopes = ["channel:bot", "user:read:chat", "channel:read:redemptions", "user:write:chat", "channel:read:subscriptions", "bits:read"];
         string state = RandomStringGenerator.GenerateRandomString(); // Generate a random state for OAuth security
         api.Settings.ClientId = configuration["ClientId"];
 

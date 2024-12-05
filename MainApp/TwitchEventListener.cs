@@ -5,6 +5,7 @@ using Spectre.Console;
 using HueApi.ColorConverters;
 using Microsoft.Extensions.Configuration;
 using TwitchChatHueControls.Models;
+using System.Security.Principal;
 
 namespace TwitchChatHueControls;
 
@@ -79,37 +80,69 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
     // Subscribe to channel point reward redemptions.
     private async Task SubscribeToChannelPointRewardsAsync(string sessionId)
     {
-        Condition condition = new(configuration["ChannelId"], null);
+        Condition condition = new(configuration["ChannelId"], null, null, null);
         Transport transport = new("websocket", sessionId);
         SubscribeEventPayload eventPayload = new("channel.channel_points_custom_reward_redemption.add", "1", condition, transport);
-        await SendMessageAsync(eventPayload); // Send the subscription request.
+        await SendMessageAsync(eventPayload);
     }
 
     // Subscribe to stream online notifications.
     private async Task SubscribeToStreamOnlineNotificationsAsync(string sessionId)
     {
-        Condition condition = new(configuration["ChannelId"], null);
+        Condition condition = new(configuration["ChannelId"], null, null, null);
         Transport transport = new("websocket", sessionId);
         SubscribeEventPayload eventPayload = new("stream.online", "1", condition, transport);
-        await SendMessageAsync(eventPayload); // Send the subscription request.
+        await SendMessageAsync(eventPayload);
     }
 
     // Subscribe to stream offline notifications.
     private async Task SubscribeToStreamOfflineNotificationsAsync(string sessionId)
     {
-        Condition condition = new(configuration["ChannelId"], null);
+        Condition condition = new(configuration["ChannelId"], null, null, null);
         Transport transport = new("websocket", sessionId);
         SubscribeEventPayload eventPayload = new("stream.offline", "1", condition, transport);
-        await SendMessageAsync(eventPayload); // Send the subscription request.
+        await SendMessageAsync(eventPayload);
     }
 
     // Subscribe to chat messages for local testing (not used in production).
     private async Task SubscribeToChannelChatMessageAsync(string sessionId)
     {
-        Condition condition = new(configuration["ChannelId"], configuration["ChannelId"]);
+        Condition condition = new(configuration["ChannelId"], configuration["ChannelId"], null, null);
         Transport transport = new("websocket", sessionId);
         SubscribeEventPayload eventPayload = new("channel.chat.message", "1", condition, transport);
-        await SendMessageAsync(eventPayload); // Send the subscription request.
+        await SendMessageAsync(eventPayload);
+    }
+
+    private async Task SubscribeToChannelSubscriptionAsync(string sessionId)
+    {
+        Condition condition = new(configuration["ChannelId"], null, null, null);
+        Transport transport = new("websocket", sessionId);
+        SubscribeEventPayload eventPayload = new("channel.subscribe", "1", condition, transport);
+        await SendMessageAsync(eventPayload);
+    }
+
+    private async Task SubscribeToChannelGiftedSubscriptionAsync(string sessionId)
+    {
+        Condition condition = new(configuration["ChannelId"], null, null, null);
+        Transport transport = new("websocket", sessionId);
+        SubscribeEventPayload eventPayload = new("channel.subscription.gift", "1", condition, transport);
+        await SendMessageAsync(eventPayload);
+    }
+
+    private async Task SubscribeToChannelResubscriptionsAsync(string sessionId)
+    {
+        Condition condition = new(configuration["ChannelId"], null, null, null);
+        Transport transport = new("websocket", sessionId);
+        SubscribeEventPayload eventPayload = new("channel.subscription.message", "1", condition, transport);
+        await SendMessageAsync(eventPayload);
+    }
+
+    private async Task SubscribeToChannelCheerAsync(string sessionId)
+    {
+        Condition condition = new(configuration["ChannelId"], null, null, null);
+        Transport transport = new("websocket", sessionId);
+        SubscribeEventPayload eventPayload = new("channel.cheer", "1", condition, transport);
+        await SendMessageAsync(eventPayload);
     }
 
     // Method to send a subscription request to the Twitch API.
@@ -248,13 +281,12 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
     {
         if (argsService.Args.FirstOrDefault() == "dev")
         {
-            Console.WriteLine(payloadJson);
+            //Console.WriteLine(payloadJson);
         }
 
         var message = JsonDocument.Parse(payloadJson);
         var metadata = message.RootElement.GetProperty("metadata");
         var messageType = metadata.GetProperty("message_type").GetString();
-        // Dictionary mapping message types to their respective handler methods.
         switch (messageType)
         {
             case "session_welcome":
@@ -305,103 +337,268 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
     // Method to handle the "session_welcome" message type.
     private async Task HandleSessionWelcomeAsync(JsonDocument payload)
     {
-        var data = JsonSerializer.Deserialize<EventSubWebsocketSessionInfoMessage>(payload, _jsonSerializerOptions);
-        string sessionId = data.Payload.Session.Id;
+        if (payload == null)
+        {
+            Console.WriteLine("Payload is null. Cannot process session welcome.");
+            return;
+        }
+
+        EventSubWebsocketSessionInfoMessage? sessionInfo;
+        try
+        {
+            sessionInfo = JsonSerializer.Deserialize<EventSubWebsocketSessionInfoMessage>(payload, _jsonSerializerOptions);
+        }
+        catch (JsonException ex)
+        {
+            Console.WriteLine($"Error deserializing session welcome payload: {ex.Message}");
+            return;
+        }
+
+        if (sessionInfo?.Payload?.Session?.Id == null)
+        {
+            Console.WriteLine("Invalid session info: Session ID is missing.");
+            return;
+        }
+
+        string sessionId = sessionInfo.Payload.Session.Id;
 
         if (argsService.Args.FirstOrDefault() == "dev")
         {
-            Console.WriteLine(sessionId); // Log the session ID in development mode.
+            Console.WriteLine($"Session ID: {sessionId}"); // Log session ID in development mode.
         }
 
-        // Subscribe to various Twitch events using the session ID.
-        await SubscribeToChannelPointRewardsAsync(sessionId);
-        await SubscribeToStreamOnlineNotificationsAsync(sessionId);
-        await SubscribeToStreamOfflineNotificationsAsync(sessionId);
-        await SubscribeToChannelChatMessageAsync(sessionId);
+        // Centralized subscription handling
+        var subscriptionActions = new List<Func<string, Task>>
+    {
+        SubscribeToChannelPointRewardsAsync,
+        SubscribeToStreamOnlineNotificationsAsync,
+        SubscribeToStreamOfflineNotificationsAsync,
+        SubscribeToChannelChatMessageAsync,
+        SubscribeToChannelSubscriptionAsync,
+        SubscribeToChannelGiftedSubscriptionAsync,
+        SubscribeToChannelResubscriptionsAsync,
+        SubscribeToChannelCheerAsync
+    };
+
+        foreach (var action in subscriptionActions)
+        {
+            try
+            {
+                await action(sessionId);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error subscribing to event with session ID '{sessionId}': {ex.Message}");
+            }
+        }
     }
+
     private static string ExtractEventType(JsonDocument payload)
     {
+        if (payload == null)
+        {
+            Console.WriteLine("Payload is null. Cannot extract event type.");
+            return string.Empty;
+        }
+
         try
         {
             return payload.RootElement
                 .GetProperty("payload")
                 .GetProperty("subscription")
-                .GetProperty("type").ToString();
+                .GetProperty("type")
+                .GetString() ?? string.Empty;
         }
-        catch
+        catch (KeyNotFoundException ex)
         {
-            return string.Empty;
+            Console.WriteLine($"Key not found while extracting event type: {ex.Message}");
         }
-    }
-
-    // Method to handle notifications received from Twitch.
-    private async Task HandleNotificationAsync(JsonDocument payload)
-    {
-        string eventType = ExtractEventType(payload);
-
-        try
+        catch (InvalidOperationException ex)
         {
-            switch (eventType)
-            {
-                case "channel.channel_points_custom_reward_redemption.add":
-                    Notification<ChannelPointsCustomRewardRedemptionAdd>? CustomRewardRedemptionAddPayload = JsonSerializer.Deserialize<Notification<ChannelPointsCustomRewardRedemptionAdd>>(payload, _jsonSerializerOptions);
-                    await HandleCustomRewardRedemptionAsync(CustomRewardRedemptionAddPayload);
-                    break;
-                case "channel.chat.message":
-                    var data = JsonSerializer.Deserialize<Notification<TwitchChatMessage>>(payload, _jsonSerializerOptions);
-                    if (argsService.Args.FirstOrDefault() == "dev")
-                    {
-                        string ChatterUsername = data.Payload.Event.chatter_user_name;
-                        string ChatterInput = data.Payload.Event.message.text;
-
-                        if (ChatterInput.Length < 30)
-                        {
-                            var SplittedInput = ChatterInput.Split(' ');
-
-                            if (SplittedInput[0] == "color")
-                            {
-                                await HandleColorCommandAsync("left", CleanUserInput(SplittedInput[1]), ChatterUsername);
-                            }
-                            else if (SplittedInput[0] == "effect")
-                            {
-                                HandleLampEffectsCommand("left", SplittedInput[1], ChatterUsername);
-                            }
-                        }
-                    }
-                    break;
-                case "stream.online":
-                    //await HandleStreamOnlineNotificationAsync(payload);
-                    break;
-                case "stream.offline":
-                    //await HandleStreamOfflineNotificationAsync(payload);
-                    break;
-                default:
-                    Console.WriteLine("Unhandled event type: " + eventType); // Log unhandled event types.
-                    break;
-            }
+            Console.WriteLine($"Invalid operation while extracting event type: {ex.Message}");
         }
         catch (Exception ex)
         {
-            Console.WriteLine("Error handling notification: " + ex.Message); // Log errors while handling notifications.
+            Console.WriteLine($"Unexpected error while extracting event type: {ex.Message}");
+        }
+
+        return string.Empty; // Return empty string if extraction fails
+    }
+
+
+    private Notification<T>? DeserializePayload<T>(JsonDocument payload)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<Notification<T>>(payload, _jsonSerializerOptions);
+        }
+        catch (JsonException ex)
+        {
+            Console.WriteLine($"Deserialization error for type {typeof(T).Name}: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Unexpected error during deserialization: {ex.Message}");
+        }
+        return null;
+    }
+
+    private async Task HandleNotificationAsync(JsonDocument payload)
+    {
+        string eventType = ExtractEventType(payload);
+        Console.WriteLine(eventType);
+        if (string.IsNullOrEmpty(eventType))
+        {
+            Console.WriteLine("Invalid event type: Event type is null or empty.");
+            return;
+        }
+
+        var eventHandlers = new Dictionary<string, Func<JsonDocument, Task>>
+    {
+        { "channel.channel_points_custom_reward_redemption.add", HandleCustomRewardRedemptionWrapper },
+        { "channel.chat.message", HandleStreamChatMessageWrapper },
+        { "stream.online", HandleStreamOnlineNotificationWrapper },
+        { "stream.offline", HandleStreamOfflineNotificationWrapper },
+        { "channel.subscribe", HandleChannelSubscriptionWrapper },
+        { "channel.subscription.gift", HandleChannelGiftedSubscriptionWrapper },
+        { "channel.subscription.message", HandleChannelResubscriptionWrapper }
+    };
+
+        if (eventHandlers.TryGetValue(eventType, out var handler))
+        {
+            try
+            {
+                await handler(payload);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error handling event '{eventType}': {ex.Message}");
+                // Optionally: Log the full exception stack trace for debugging
+            }
+        }
+        else
+        {
+            Console.WriteLine($"Unhandled event type: {eventType}");
         }
     }
 
+    private async Task HandleCustomRewardRedemptionWrapper(JsonDocument payload)
+    {
+        var deserializedPayload = DeserializePayload<ChannelPointsCustomRewardRedemptionAdd>(payload);
+        if (deserializedPayload != null)
+        {
+            await HandleCustomRewardRedemption(deserializedPayload);
+        }
+    }
+
+    private async Task HandleStreamChatMessageWrapper(JsonDocument payload)
+    {
+        var deserializedPayload = DeserializePayload<TwitchChatMessage>(payload);
+        if (deserializedPayload != null && argsService.Args.FirstOrDefault() == "dev")
+        {
+            await HandleStreamChatMessage(deserializedPayload);
+        }
+    }
+
+    private Task HandleStreamOnlineNotificationWrapper(JsonDocument payload)
+    {
+        var deserializedPayload = DeserializePayload<StreamOnline>(payload);
+        if (deserializedPayload != null)
+        {
+            HandleStreamOnlineNotification(deserializedPayload);
+        }
+        return Task.CompletedTask;
+    }
+
+    private Task HandleStreamOfflineNotificationWrapper(JsonDocument payload)
+    {
+        var deserializedPayload = DeserializePayload<StreamOffline>(payload);
+        if (deserializedPayload != null)
+        {
+            HandleStreamOfflineNotification(deserializedPayload);
+        }
+        return Task.CompletedTask;
+    }
+
+    private Task HandleChannelSubscriptionWrapper(JsonDocument payload)
+    {
+        var deserializedPayload = DeserializePayload<ChannelSubscriptionPayload>(payload);
+        if (deserializedPayload != null)
+        {
+            HandleChannelSubscription(deserializedPayload);
+        }
+        return Task.CompletedTask;
+    }
+
+    private Task HandleChannelGiftedSubscriptionWrapper(JsonDocument payload)
+    {
+        var deserializedPayload = DeserializePayload<ChannelGiftedSubscriptionPayload>(payload);
+        if (deserializedPayload != null)
+        {
+            HandleChannelGiftedsubscription(deserializedPayload);
+        }
+        return Task.CompletedTask;
+    }
+
+    private Task HandleChannelResubscriptionWrapper(JsonDocument payload)
+    {
+        var deserializedPayload = DeserializePayload<ChannelResubscriptionPayload>(payload);
+        if (deserializedPayload != null)
+        {
+            HandleChannelResubscription(deserializedPayload);
+        }
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleStreamChatMessage(Notification<TwitchChatMessage> payload)
+    {
+        string ChatterUsername = payload.Payload.Event.chatter_user_name;
+        string ChatterInput = payload.Payload.Event.message.text;
+
+        if (ChatterInput.Length < 30)
+        {
+            var SplittedInput = ChatterInput.Split(' ');
+
+            if (SplittedInput[0] == "color")
+            {
+                await HandleLampColorCommandAsync("left", CleanUserInput(SplittedInput[1]), ChatterUsername);
+            }
+            else if (SplittedInput[0] == "effect")
+            {
+            }
+        }
+    }
     // Method to handle the "stream.online" event type.
-    private async Task HandleStreamOnlineNotificationAsync(Notification<StreamOnline>  payload)
+    private void HandleStreamOnlineNotification(Notification<StreamOnline> payload)
     {
         string StreamerUsername = payload.Payload.Event.broadcaster_user_name;
         Console.WriteLine($"{StreamerUsername} went live!"); // Log the stream online event.
     }
 
     // Method to handle the "stream.offline" event type.
-    private async Task HandleStreamOfflineNotificationAsync(Notification<StreamOffline>  payload)
+    private void HandleStreamOfflineNotification(Notification<StreamOffline> payload)
     {
         string StreamerUsername = payload.Payload.Event.broadcaster_user_name;
         Console.WriteLine($"{StreamerUsername} went offline!"); // Log the stream offline event.
     }
 
+    private async void HandleChannelSubscription(Notification<ChannelSubscriptionPayload> payload)
+    {
+        await HandleLampEffectsCommand(EffectPalette.Subscription, "left");
+    }
+
+    private void HandleChannelGiftedsubscription(Notification<ChannelGiftedSubscriptionPayload> payload)
+    {
+
+    }
+
+    private void HandleChannelResubscription(Notification<ChannelResubscriptionPayload> payload)
+    {
+
+    }
+
     // Method to handle custom reward redemptions from Twitch.
-    private async Task HandleCustomRewardRedemptionAsync(Notification<ChannelPointsCustomRewardRedemptionAdd> payload)
+    private async Task HandleCustomRewardRedemption(Notification<ChannelPointsCustomRewardRedemptionAdd> payload)
     {
         string RewardTitle = payload.Payload.Event.reward.title;
         string UserInput = payload.Payload.Event.user_input;
@@ -411,10 +608,10 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
         switch (RewardTitle)
         {
             case "Change left lamp color":
-                await HandleColorCommandAsync("left", CleanUserInput(UserInput), RedeemUsername);
+                await HandleLampColorCommandAsync("left", CleanUserInput(UserInput), RedeemUsername);
                 break;
             case "Change right lamp color":
-                await HandleColorCommandAsync("right", CleanUserInput(UserInput), RedeemUsername);
+                await HandleLampColorCommandAsync("right", CleanUserInput(UserInput), RedeemUsername);
                 break;
             default:
                 Console.WriteLine("Unknown command: " + RewardTitle); // Log unknown commands.
@@ -435,28 +632,25 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
     }
 
     // Method to handle color commands (e.g., changing lamp colors).
-    private async Task HandleColorCommandAsync(string lamp, string color, string RedeemUsername)
+    private async Task HandleLampColorCommandAsync(string lamp, string color, string RedeemUsername)
     {
         RGBColor finalColor = await GetColorAsync(color, RedeemUsername); // Resolve the color input.
+
         await hueController.SetLampColorAsync(lamp, finalColor); // Set the lamp color using the resolved RGB value.
     }
 
-    private async void HandleLampEffectsCommand(string lamp, string effect, string RedeemUsername)
+
+    private async Task HandleLampEffectsCommand(EffectPalette EffectType, string lamp)
     {
-        // Get all available effects
-        var availableEffects = hueController.GetAllAvailableEffects()
-                                             .Select(e => e.ToString().ToLowerInvariant())
-                                             .ToList();
-        // Check if the provided effect exists (case-insensitive)
-        if (availableEffects.Contains(effect.ToLowerInvariant()) || effect.ToLowerInvariant() == "alternate")
-        {
-            hueController.SetLampEffect(lamp, effect.ToLowerInvariant(), "subscription");
-        }
-        else
-        {
-            await SendInvalidEffectMessageAsync(RedeemUsername, effect);
-            Console.WriteLine($"Effect '{effect}' is not a valid option. Available effects are: {string.Join(", ", availableEffects)}.");
-        }
+        var LightList = hueController.CreateCustomEffect(EffectType);
+        await hueController.RunEffect(LightList, lamp);
+    }
+
+
+    private async void HandleLampEffectsCommand(EffectPalette EffectType)
+    {
+        var LightList = hueController.CreateCustomEffect(EffectType);
+        await hueController.RunEffect(LightList, null);
     }
 
 
@@ -509,25 +703,6 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
             Console.WriteLine($"Failed to send message. Status code: {response.StatusCode}"); // Log failure to send message.
         }
     }
-
-    private async Task SendInvalidEffectMessageAsync(string RedeemUsername, string invalidEffect)
-    {
-        var errorMessage = new
-        {
-            broadcaster_id = configuration["ChannelId"],
-            sender_id = configuration["ChannelId"],
-            message = $"@{RedeemUsername} Unfortunately it appears that '{invalidEffect}' is not currently supported. Yuki chose a color for you instead. asecre3RacDerp",
-        };
-
-        string errorMessageJson = JsonSerializer.Serialize(errorMessage, _jsonSerializerOptions);
-        var response = await twitchHttpClient.PostAsync("ChatMessage", errorMessageJson);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            Console.WriteLine($"Failed to send message. Status code: {response.StatusCode}"); // Log failure to send message.
-        }
-    }
-
 
     // Handle the "session_keepalive" event type (currently does nothing).
     private Task HandleKeepAliveAsync(JsonDocument payload)

@@ -8,9 +8,10 @@ using Spectre.Console;
 using Microsoft.Extensions.Configuration;
 using HueApi.ColorConverters.Original.Extensions;
 using HueApi.Models;
+using System.Text;
 
 namespace TwitchChatHueControls;
-internal enum ColorPalette
+internal enum EffectPalette
 {
     Default,
     Subscription,
@@ -47,6 +48,8 @@ internal interface IHueController : IDisposable
     Task SetLampColorAsync(string lamp, RGBColor color); // Sets the color of a specific lamp
     void SetLampEffect(string lampIdentifier, string lampEffects, string alternatingEffectType);
     List<Effect> GetAllAvailableEffects();
+    List<UpdateLight> CreateCustomEffect(EffectPalette EffectType);
+    Task RunEffect(List<UpdateLight> UpdateEffectUpdateLight, string? lamp, double durationMs = 5000);
 }
 
 // Implementation of the IHueController interface
@@ -61,13 +64,13 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
     private Timer _pollingTimer; // Timer for polling the link button status
     private TaskCompletionSource<bool> _pollingTaskCompletionSource; // Task completion source for waiting on the polling process
 
-    public static readonly Dictionary<ColorPalette, List<XyPosition>> ColorPalettes = new Dictionary<ColorPalette, List<XyPosition>>
+    public static readonly Dictionary<EffectPalette, List<XyPosition>> EffectPalettes = new Dictionary<EffectPalette, List<XyPosition>>
     {
-        { ColorPalette.Default, new List<XyPosition> { Xy.Blue, Xy.Green, Xy.Red } },
-        { ColorPalette.Subscription, new List<XyPosition> { Xy.Blue, Xy.Teal } },
-        { ColorPalette.Bits, new List<XyPosition> { Xy.Green, Xy.Yellow } },
-        { ColorPalette.Follow, new List<XyPosition> { Xy.Red, Xy.Blue } },
-        { ColorPalette.Raid, new List<XyPosition> { Xy.Orange, Xy.Purple}}
+        { EffectPalette.Default, new List<XyPosition> { Xy.Blue, Xy.Green, Xy.Red } },
+        { EffectPalette.Subscription, new List<XyPosition> { Xy.Blue, Xy.Red, Xy.Yellow, Xy.Purple, Xy.Yellow, Xy.Purple } },
+        { EffectPalette.Bits, new List<XyPosition> { Xy.Green, Xy.Yellow } },
+        { EffectPalette.Follow, new List<XyPosition> { Xy.Red, Xy.Blue } },
+        { EffectPalette.Raid, new List<XyPosition> { Xy.Orange, Xy.Purple}}
     };
 
     // Discovers Hue bridges on the local network
@@ -226,75 +229,76 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
             AnsiConsole.MarkupLine($"[bold red]Lamp '{lampIdentifier}' not found in the light map.[/]");
         }
     }
-    private static UpdateLight CreateAlternatingEffect(
-          ColorPalette palette = ColorPalette.Default,
-          int durationMs = 5000)
-    {
-        // Use custom colors if provided, otherwise use the selected palette
-        var colors = ColorPalettes[palette];
 
-        // Ensure we have at least two colors
+    private static List<UpdateLight> CreateEffect(EffectPalette palette = EffectPalette.Default)
+    {
+        List<XyPosition> colors = EffectPalettes[palette];
         if (colors == null || colors.Count < 2)
         {
-            throw new ArgumentException("At least two colors are required for alternating effect");
+            throw new ArgumentException("At least two colors are required for custom effect");
         }
 
-        return new UpdateLight
+        List<UpdateLight> te = [];
+        foreach (var color in colors)
         {
-            Signaling = new SignalingUpdate
-            {
-                Signal = Signal.alternating,
-                Duration = durationMs,
-                Colors = colors.Select(xyPos => new HueApi.Models.Color { Xy = xyPos }).ToList()
-            }
-        };
+            te.Add(new UpdateLight().SetColor(XyPositionExtensions.ToRGBColor(color)));
+        }
+        return te;
     }
 
-    private async Task AlternatingEffect(Guid lightId, string alternatingEffectType)
+    public List<UpdateLight> CreateCustomEffect(EffectPalette EffectType)
     {
-        ColorPalette palette = alternatingEffectType.ToLowerInvariant() switch
-        {
-            "default" => ColorPalette.Default,
-            "subscription" => ColorPalette.Subscription,
-            "raid" => ColorPalette.Raid,
-            "bits" => ColorPalette.Bits,
-            "follow" => ColorPalette.Follow,
-            _ => ColorPalette.Default // Fallback to default if no match
-        };
-
-        var customUpdate = CreateAlternatingEffect(
-            palette,
-            durationMs: 6000
+        return CreateEffect(
+            EffectType
         );
-
-        await SendLightUpdateAsync(lightId, customUpdate);
     }
+
+    public async Task RunEffect(List<UpdateLight> updateEffectUpdateLight, string? lamp, double durationMs = 5000)
+    {
+        // Get the light ID based on the lamp name
+        if (!_lightMap.TryGetValue(GetLampName(lamp), out Guid lightId))
+        {
+            return;
+        }
+
+        var startTime = DateTime.Now;
+
+        var elapsedTime = 0.0;
+        while (elapsedTime < durationMs)
+        {
+            foreach (var update in updateEffectUpdateLight)
+            {
+                await _hueClient.UpdateLightAsync(lightId, update);
+
+                await Task.Delay(500);
+
+                elapsedTime = (DateTime.Now - startTime).TotalMilliseconds;
+                if (elapsedTime >= durationMs)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+
+
     public async void SetLampEffect(string lampIdentifier, string lampEffects, string alternatingEffectType = null)
     {
         // Check if the lamp exists in the light map
         if (_lightMap.TryGetValue(GetLampName(lampIdentifier), out Guid lightId))
         {
-            try
+            switch (lampEffects)
             {
-                switch (lampEffects)
-                {
-                    case "prism":
-                        PrismEffect(lightId);
-                        break;
-                    case "fire":
-                        FireEffect(lightId);
-                        break;
-                    case "candle":
-                        CandleEffect(lightId);
-                        break;
-                    case "alternate":
-                        AlternatingEffect(lightId, alternatingEffectType);
-                        break;
-                }
-            }
-            catch (Exception ex)
-            {
-                AnsiConsole.MarkupLine($"[bold red]Error updating lamp '{lampIdentifier}': {ex.Message}[/]");
+                case "prism":
+                    PrismEffect(lightId);
+                    break;
+                case "fire":
+                    FireEffect(lightId);
+                    break;
+                case "candle":
+                    CandleEffect(lightId);
+                    break;
             }
         }
         else
@@ -323,7 +327,29 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
 
     private async Task<HuePutResponse> SendLightUpdateAsync(Guid lightId, UpdateLight update)
     {
-        return await _hueClient.UpdateLightAsync(lightId, update);
+        try
+        {
+            return await _hueClient.UpdateLightAsync(lightId, update);
+        }
+        catch (HttpRequestException ex)
+        {
+            // Network-related errors
+            Console.WriteLine($"Network error updating light {lightId}\n{ex}");
+            throw;
+        }
+        catch (TaskCanceledException ex)
+        {
+            // Timeout scenarios
+            Console.WriteLine($"Request timed out for light {lightId}\n{ex}");
+
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Catch-all for unexpected errors
+            Console.WriteLine($"Unexpected error updating light {lightId}\n{ex}");
+            throw;
+        }
     }
 
     public List<Effect> GetAllAvailableEffects()
@@ -331,7 +357,7 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
         return Enum.GetValues(typeof(Effect)).Cast<Effect>().ToList();
     }
 
-    private UpdateLight CreateEffectUpdate(Effect effect)
+    private static UpdateLight CreateEffectUpdate(Effect effect)
     {
         return new UpdateLight
         {
@@ -344,7 +370,7 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
 
 
     // Maps input identifiers (e.g., "left", "right") to specific lamp names
-    private string GetLampName(string lamp) => lamp switch
+    private static string GetLampName(string lamp) => lamp switch
     {
         "left" => "room_streaming_left_lamp",
         "right" => "room_streaming_right_lamp",

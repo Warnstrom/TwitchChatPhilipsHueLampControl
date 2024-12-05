@@ -1,4 +1,4 @@
-using Makaretu.Dns;
+using HueApi.ColorConverters;
 
 namespace TwitchChatHueControls.Models;
 
@@ -11,7 +11,9 @@ internal record SubscribeEventPayload(
 
 internal record Condition(
     string? broadcaster_user_id,
-    string? user_id
+    string? user_id,
+    string? from_broadcaster_user_id,
+    string? to_broadcaster_user_id
 );
 
 internal record Transport(
@@ -67,73 +69,9 @@ internal record NotificationPayloadSubscription(
     Transport Transport,
     DateTime CreatedAt
 );
-
-internal record StreamOnline(
-    string id,
-    string broadcaster_user_id,
-    string broadcaster_user_login,
-    string broadcaster_user_name,
-    string type,
-    DateTime started_at
-);
-
-internal record StreamOffline(
-    string broadcaster_user_id,
-    string broadcaster_user_login,
-    string broadcaster_user_name
-);
-
-internal record ChannelPointsCustomRewardRedemptionAdd(
-    string id,
-    string broadcaster_user_id,
-    string broadcaster_user_login,
-    string broadcaster_user_name,
-    string user_id,
-    string user_login,
-    string user_name,
-    string user_input,
-    string status,
-    ChannelPointsCustomRewardRedemptionAddReward reward,
-    DateTime redeemed_at
-);
-
-internal record ChannelPointsCustomRewardRedemptionAddReward(
-    string id,
-    string title,
-    int cost,
-    string prompt
-);
-
-internal record TwitchChatMessage(
-    string broadcaster_user_id,
-    string broadcaster_user_login,
-    string broadcaster_user_name,
-    string source_broadcaster_user_id,
-    string source_broadcaster_user_login,
-    string source_broadcaster_user_name,
-    string chatter_user_id,
-    string chatter_user_login,
-    string chatter_user_name,
-    string message_id,
-    string source_message_id,
-    ChatMessage message,
-    string color,
-    string message_type,
-    object cheer,
-    object reply,
-    string channel_points_custom_reward_id,
-    string channel_points_animation_id
-);
-
-internal record ChatMessage(
-    string text,
-    List<Fragment> fragments
-);
-
-internal record Fragment(
-    string type,
-    string text,
-    object? cheermote,
-    object? emote,
-    object? mention
+internal record LightRequest
+(
+    string[] LampIdentifiers,
+    string? EffectType,
+    RGBColor ColorName
 );
