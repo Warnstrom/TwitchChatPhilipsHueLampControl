@@ -9,11 +9,13 @@ using Microsoft.Extensions.Configuration;
 using HueApi.ColorConverters.Original.Extensions;
 using HueApi.Models;
 using System.Text;
+using System.Diagnostics;
 
 namespace TwitchChatHueControls;
 internal enum EffectPalette
 {
     Default,
+    GiftedSubscription,
     Subscription,
     Raid,
     Follow,
@@ -48,7 +50,7 @@ internal interface IHueController : IDisposable
     Task SetLampColorAsync(string lamp, RGBColor color); // Sets the color of a specific lamp
     List<Effect> GetAllAvailableEffects();
     List<UpdateLight> CreateCustomEffect(EffectPalette EffectType);
-    Task RunEffect(List<UpdateLight> UpdateEffectUpdateLight, string? lamp, double durationMs = 5000);
+    Task RunEffect(List<UpdateLight> updateEffectUpdates, string? lamp = null, CancellationToken cancellationToken = default, int durationMs = 5000);
 }
 
 // Implementation of the IHueController interface
@@ -62,11 +64,11 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
     private string _appKey; // Stores the app key used to authenticate with the Hue bridge
     private Timer _pollingTimer; // Timer for polling the link button status
     private TaskCompletionSource<bool> _pollingTaskCompletionSource; // Task completion source for waiting on the polling process
-
     public static readonly Dictionary<EffectPalette, List<XyPosition>> EffectPalettes = new Dictionary<EffectPalette, List<XyPosition>>
     {
         { EffectPalette.Default, new List<XyPosition> { Xy.Blue, Xy.Green, Xy.Red } },
         { EffectPalette.Subscription, new List<XyPosition> { Xy.Blue, Xy.Red, } },
+        { EffectPalette.GiftedSubscription, new List<XyPosition> { Xy.Green, Xy.Yellow, } },
         { EffectPalette.Bits, new List<XyPosition> { Xy.Green, Xy.Yellow } },
         { EffectPalette.Follow, new List<XyPosition> { Xy.Yellow, Xy.Green } },
         { EffectPalette.Raid, new List<XyPosition> { Xy.Orange, Xy.Purple}}
@@ -84,8 +86,8 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
             .StartAsync("Searching for Hue bridges...", async ctx =>
             {
                 // Adjust these time spans as needed.
-                var searchTimeout = TimeSpan.FromSeconds(10);
-                var discoveryTimeout = TimeSpan.FromSeconds(60);
+                TimeSpan searchTimeout = TimeSpan.FromSeconds(10);
+                TimeSpan discoveryTimeout = TimeSpan.FromSeconds(60);
 
                 // This is where the discovery happens with the spinner active.
                 bridges = await HueBridgeDiscovery.CompleteDiscoveryAsync(searchTimeout, discoveryTimeout);
@@ -251,35 +253,59 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
             EffectType
         );
     }
-
-    public async Task RunEffect(List<UpdateLight> updateEffectUpdateLight, string? lamp, double durationMs = 5000)
+    public async Task RunEffect(List<UpdateLight> updateEffectUpdates, string? lamp = null,CancellationToken cancellationToken = default,
+        int durationMs = 5000)
     {
-        if (!_lightMap.TryGetValue(GetLampName(lamp), out Guid lightId))
+        // Validate inputs
+        // Determine target lights
+        Guid[] LightIdList = [];
+        if (lamp == null)
         {
-            return;
+            LightIdList = _lightMap.Values.ToArray();
+        }
+        else
+        {
+            LightIdList = _lightMap.TryGetValue(lamp, out Guid lightId)
+                ? [lightId]
+                : Array.Empty<Guid>();
         }
 
-        var startTime = DateTime.Now;
+        // Use stopwatch for more precise timing
+        var stopwatch = Stopwatch.StartNew();
 
-        var elapsedTime = 0.0;
-        while (elapsedTime < durationMs)
+        try
         {
-            foreach (var update in updateEffectUpdateLight)
+            Console.WriteLine("Request Started");
+            while (stopwatch.ElapsedMilliseconds < durationMs)
             {
-                await _hueClient.UpdateLightAsync(lightId, update);
+                // Check for cancellation
+                cancellationToken.ThrowIfCancellationRequested();
 
-                await Task.Delay(500);
-
-                elapsedTime = (DateTime.Now - startTime).TotalMilliseconds;
-                if (elapsedTime >= durationMs)
+                // Cycle through updates
+                foreach (var update in updateEffectUpdates)
                 {
-                    break;
+                    var tasks = LightIdList.Select(lightId =>
+                        SendLightUpdateAsync(lightId, update, cancellationToken));
+
+                    await Task.WhenAll(tasks);
+
+                    // Check if duration is exceeded after updates
+                    if (stopwatch.ElapsedMilliseconds >= durationMs)
+                        break;
+
+                    // Controlled delay between update cycles
+                    await Task.Delay(500, cancellationToken);
                 }
             }
         }
+        finally
+        {
+            Console.WriteLine("Request completed");
+            stopwatch.Stop();
+        }
     }
 
-    private async Task<HuePutResponse> SendLightUpdateAsync(Guid lightId, UpdateLight update)
+    private async Task<HuePutResponse> SendLightUpdateAsync(Guid lightId, UpdateLight update, CancellationToken cancellationToken)
     {
         try
         {

@@ -6,6 +6,7 @@ using HueApi.ColorConverters;
 using Microsoft.Extensions.Configuration;
 using TwitchChatHueControls.Models;
 using System.Security.Principal;
+using System.Threading.Channels;
 
 namespace TwitchChatHueControls;
 
@@ -23,6 +24,7 @@ internal class TwitchEventSubListener(IConfiguration configuration, TwitchLib.Ap
 IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClient twitchHttpClient,
 IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : ITwitchEventSubListener
 {
+    private Channel<Func<Task>> _effectQueue;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions
     {
         PropertyNameCaseInsensitive = true,
@@ -73,7 +75,11 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
         _webSocket.Options.SetRequestHeader("Client-Id", configuration["ClientId"]);
         _webSocket.Options.SetRequestHeader("Authorization", $"Bearer {api.Settings.AccessToken}");
         _webSocket.Options.SetRequestHeader("Content-Type", "application/json");
-
+        _effectQueue = Channel.CreateUnbounded<Func<Task>>(new UnboundedChannelOptions
+        {
+            SingleReader = true
+        });
+        StartQueueProcessor();
         await _webSocket.ConnectAsync(websocketUrl, CancellationToken.None);
     }
 
@@ -579,12 +585,12 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
 
     private async void HandleChannelSubscription(Notification<ChannelSubscriptionPayload> payload)
     {
-        await HandleLampEffectsCommand(EffectPalette.Subscription, "left");
+        await HandleLampEffectsCommand(EffectPalette.Subscription);
     }
 
-    private void HandleChannelGiftedsubscription(Notification<ChannelGiftedSubscriptionPayload> payload)
+    private async void HandleChannelGiftedsubscription(Notification<ChannelGiftedSubscriptionPayload> payload)
     {
-
+        await HandleLampEffectsCommand(EffectPalette.GiftedSubscription);
     }
 
     private void HandleChannelResubscription(Notification<ChannelResubscriptionPayload> payload)
@@ -630,8 +636,17 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
     private async Task HandleLampColorCommandAsync(string lamp, string color, string RedeemUsername)
     {
         RGBColor finalColor = await GetColorAsync(color, RedeemUsername); // Resolve the color input.
-
-        await hueController.SetLampColorAsync(lamp, finalColor); // Set the lamp color using the resolved RGB value.
+        await _effectQueue.Writer.WriteAsync(async () =>
+        {
+            try
+            {
+                await hueController.SetLampColorAsync(lamp, finalColor); // Set the lamp color using the resolved RGB value.
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
+            }
+        });
     }
 
 
@@ -640,12 +655,34 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
         var LightList = hueController.CreateCustomEffect(EffectType);
         await hueController.RunEffect(LightList, lamp);
     }
-
-
-    private async void HandleLampEffectsCommand(EffectPalette EffectType)
+    private async Task HandleLampEffectsCommand(EffectPalette EffectType)
     {
         var LightList = hueController.CreateCustomEffect(EffectType);
-        await hueController.RunEffect(LightList, null);
+
+        await _effectQueue.Writer.WriteAsync(async () =>
+        {
+            try
+            {
+                await hueController.RunEffect(LightList, null);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
+            }
+        });
+    }
+
+    private Task _queueProcessorTask;
+
+    private void StartQueueProcessor()
+    {
+        _queueProcessorTask = Task.Run(async () =>
+        {
+            await foreach (var effectAction in _effectQueue.Reader.ReadAllAsync())
+            {
+                await effectAction();
+            }
+        });
     }
 
 

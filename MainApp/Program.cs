@@ -3,7 +3,6 @@ using Microsoft.Extensions.Configuration;
 using Spectre.Console;
 using System.Text;
 using TwitchLib.Api.Core.Exceptions;
-using TwitchChatHueControls.Models;
 namespace TwitchChatHueControls;
 public class Program
 {
@@ -52,23 +51,21 @@ public class Program
         string configFile)
     {
         var configurationRoot = BuildConfiguration(settingsFile, configFile);
-        services
-            .AddSingleton<IConfiguration>(configurationRoot)
-            .AddSingleton<IConfigurationRoot>(configurationRoot)
-            .AddSingleton<IConfigurationService, ConfigurationService>()
-            .AddSingleton(new ArgsService(args))
-            .AddSingleton<IJsonFileController>(sp => new JsonFileController(string.IsNullOrEmpty(configFile) ? settingsFile : configFile, configurationRoot))
-            .AddSingleton<IHexColorMapDictionary>(new HexColorMapDictionary("colors.json", configurationRoot))
-            .AddSingleton<IHueController, HueController>()
-            .AddSingleton<TwitchLib.Api.TwitchAPI>()
-            .AddSingleton<TwitchEventSubListener>()
-            .AddSingleton<IBridgeValidator, BridgeValidator>()
-            .AddScoped<ITwitchHttpClient, TwitchHttpClient>()
-            .AddTransient<IVersionUpdateService, VersionUpdateService>()
-            .AddSingleton<IObservableQueue, ObservableQueue>()
-            .AddSingleton<WebServer>()
-            // Register the main application entry point
-            .AddTransient<App>();
+        services.AddSingleton<IConfiguration>(configurationRoot);
+        services.AddSingleton<IConfigurationRoot>(configurationRoot);
+        services.AddSingleton<IConfigurationService, ConfigurationService>();
+        services.AddSingleton(new ArgsService(args));
+        services.AddSingleton<IJsonFileController>(sp => new JsonFileController(string.IsNullOrEmpty(configFile) ? settingsFile : configFile, configurationRoot));
+        services.AddSingleton<IHexColorMapDictionary>(new HexColorMapDictionary("colors.json", configurationRoot));
+        services.AddSingleton<IHueController, HueController>();
+        services.AddSingleton<TwitchLib.Api.TwitchAPI>();
+
+        services.AddSingleton<IBridgeValidator, BridgeValidator>();
+        services.AddScoped<ITwitchHttpClient, TwitchHttpClient>();
+        services.AddTransient<IVersionUpdateService, VersionUpdateService>();
+        services.AddSingleton<WebServer>();
+        services.AddSingleton<TwitchEventSubListener>();
+        services.AddTransient<App>();
     }
     private static IConfigurationRoot BuildConfiguration(string settingsFile, string configFile)
     {
