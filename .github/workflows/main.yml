@@ -1,0 +1,96 @@
+name: Continuous Development Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  create-or-update-dev-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '7.0.x' # Adjust to your project's .NET version
+    
+    # Generate a consistent dev tag based on current date
+    - name: Generate Dev Tag
+      id: generate-tag
+      run: |
+        DEV_TAG=dev_$(date +'%Y%m%d')
+        echo "tag=$DEV_TAG" >> $GITHUB_OUTPUT
+    
+    # Check if release already exists
+    - name: Check Existing Release
+      id: check-release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        # Try to find an existing release with the generated tag
+        RELEASE_EXISTS=$(gh release list | grep "${{ steps.generate-tag.outputs.tag }}" || true)
+        if [ -n "$RELEASE_EXISTS" ]; then
+          echo "existing_release=true" >> $GITHUB_OUTPUT
+        else
+          echo "existing_release=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Publish Windows Executable
+      run: |
+        # Publish Windows x64 executable
+        dotnet publish -c Release -r win-x64 --self-contained true \
+        -p:PublishSingleFile=true \
+        -p:EnableCompressionInSingleFile=true \
+        -p:PublishReadyToRun=true \
+        -o ./bin/Release/publish_windows-x64
+        
+        # Zip Windows artifacts
+        cd ./bin/Release/publish_windows-x64
+        zip -r ../publish_windows.zip *
+        cd ../../../
+    
+    - name: Publish Linux Executable
+      run: |
+        # Publish Linux x64 executable
+        dotnet publish -c Release -r linux-x64 --self-contained true \
+        -p:PublishSingleFile=true \
+        -p:EnableCompressionInSingleFile=true \
+        -o ./bin/Release/publish_linux-x64
+        
+        # Zip Linux artifacts
+        cd ./bin/Release/publish_linux-x64
+        zip -r ../publish_linux.zip *
+        cd ../../../
+    
+    # Create a new release if one doesn't exist
+    - name: Create New Development Release
+      if: steps.check-release.outputs.existing_release == 'false'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh release create ${{ steps.generate-tag.outputs.tag }} \
+          ./bin/Release/publish_windows.zip \
+          ./bin/Release/publish_linux.zip \
+          --title "Development Release ${{ steps.generate-tag.outputs.tag }}" \
+          --notes "Automated development build" \
+          --target main
+    
+    # Update existing release if it already exists
+    - name: Update Existing Development Release
+      if: steps.check-release.outputs.existing_release == 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        # Delete existing assets
+        RELEASE_TAG=${{ steps.generate-tag.outputs.tag }}
+        gh release delete-asset $RELEASE_TAG publish_windows.zip || true
+        gh release delete-asset $RELEASE_TAG publish_linux.zip || true
+        
+        # Upload new assets
+        gh release upload $RELEASE_TAG \
+          ./bin/Release/publish_windows.zip \
+          ./bin/Release/publish_linux.zip
