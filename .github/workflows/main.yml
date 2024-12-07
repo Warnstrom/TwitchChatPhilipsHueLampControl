@@ -1,48 +1,57 @@
-name: .NET Publish and Release
+name: .NET Cross-Platform Release
 
 on:
   push:
     tags:
-      - 'dev*' # Trigger on version tags
+      - 'dev*' # Triggers on version tags like v1.0.0
 
 jobs:
   build-and-release:
+    name: Build and Release
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+    - name: Checkout Repository
+      uses: actions/checkout@v4
     
     - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '7.0.x' # Adjust to your project's .NET version
+        dotnet-version: '8.0.x' # Adjust to your project's .NET version
     
-    - name: Publish Linux Artifact
+    - name: Publish Windows Executable
       run: |
-        # Publish for Linux
-        dotnet publish -c Release -r linux-x64 --self-contained true -o ./bin/Release/publish_linux-x64
-        
-        # Zip Linux artifacts
-        cd ./bin/Release/publish_linux-x64
-        zip -r ../publish_linux.zip *
-        cd ../../../
-    
-    - name: Publish Windows Artifact
-      run: |
-        # Publish for Windows
-        dotnet publish -c Release -r win-x64 --self-contained true -o ./bin/Release/publish_windows-x64
+        # Publish Windows x64 executable
+        dotnet publish -c Release -r win-x64 --self-contained true \
+        -p:PublishSingleFile=true \
+        -p:EnableCompressionInSingleFile=true \
+        -p:PublishReadyToRun=true \
+        -o ./bin/Release/publish_windows-x64
         
         # Zip Windows artifacts
         cd ./bin/Release/publish_windows-x64
         zip -r ../publish_windows.zip *
         cd ../../../
     
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
+    - name: Publish Linux Executable
+      run: |
+        # Publish Linux x64 executable
+        dotnet publish -c Release -r linux-x64 --self-contained true \
+        -p:PublishSingleFile=true \
+        -p:EnableCompressionInSingleFile=true \
+        -o ./bin/Release/publish_linux-x64
+        
+        # Zip Linux artifacts
+        cd ./bin/Release/publish_linux-x64
+        zip -r ../publish_linux.zip *
+        cd ../../../
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
       with:
         files: |
-          ./bin/Release/publish_linux.zip
           ./bin/Release/publish_windows.zip
+          ./bin/Release/publish_linux.zip
+        generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
