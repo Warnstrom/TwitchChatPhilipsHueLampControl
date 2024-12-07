@@ -4,7 +4,9 @@ on:
   push:
     branches:
       - main
-
+permissions:
+  contents: write
+  
 jobs:
   create-or-update-dev-release:
     runs-on: ubuntu-latest
