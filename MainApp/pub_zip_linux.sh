@@ -1,5 +1,5 @@
 #!/bin/bash
-
+#Test
 # Run the dotnet publish command
 dotnet publish -c Release -r linux-x64 --self-contained true -o ./bin/Release/publish_linux-x64
 
