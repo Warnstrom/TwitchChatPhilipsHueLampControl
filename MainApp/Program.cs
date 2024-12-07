@@ -33,7 +33,7 @@ public class Program
         string settingsFile = args.FirstOrDefault() == "dev"
             ? "devmodesettings.json"
             : "appsettings.json";
-        string configFile = args.Length == 2
+        string configFile = args.Length == 2 && !args.Contains("local")
             ? args[1]
             : string.Empty;
         return (settingsFile, configFile);
@@ -58,8 +58,9 @@ public class Program
         services.AddSingleton<IJsonFileController>(sp => new JsonFileController(string.IsNullOrEmpty(configFile) ? settingsFile : configFile, configurationRoot));
         services.AddSingleton<IHexColorMapDictionary>(new HexColorMapDictionary("colors.json", configurationRoot));
         services.AddSingleton<IHueController, HueController>();
+        services.AddSingleton<ILampEffectQueueService, LampEffectQueueService>();
+        services.AddSingleton<ITestLampEffectService, TestLampEffectService>();
         services.AddSingleton<TwitchLib.Api.TwitchAPI>();
-
         services.AddSingleton<IBridgeValidator, BridgeValidator>();
         services.AddScoped<ITwitchHttpClient, TwitchHttpClient>();
         services.AddTransient<IVersionUpdateService, VersionUpdateService>();
@@ -106,7 +107,7 @@ public class Program
 internal class App(IConfiguration configuration, IJsonFileController jsonController, IHueController hueController,
         TwitchLib.Api.TwitchAPI api, TwitchEventSubListener eventSubListener, WebServer webServer,
         ArgsService argsService, IBridgeValidator bridgeValidator,
-        IVersionUpdateService versionUpdateService, ITwitchHttpClient twitchHttpClient, IConfigurationService configurationEditor)
+        IVersionUpdateService versionUpdateService, ITwitchHttpClient twitchHttpClient, IConfigurationService configurationEditor, ITestLampEffectService testLampEffectService)
 {
     // The main run method to start the app's functionality
     public async Task RunAsync()
@@ -169,14 +170,62 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
                     await ConfigureTwitchTokens(); // Handle Twitch token configuration
                     break;
                 case 2:
+                    await hueController.StartPollingForLinkButtonAsync("YukiDanceParty", "MyDevice", configuration["bridgeIp"], configuration["AppKey"]);
+                    AnsiConsole.Markup("[yellow]Opening Lamp Effect Testing[/]\n");
+                    var keys = new Dictionary<int, string>
+                        {
+                            { 0, "Exit" },
+                            { 1, "Subscription" },
+                            { 2, "GiftedSubscription" },
+                            { 3, "Follow" },
+                        };
+                    // Create a prompt for the user to select a configuration key to edit
+                    var prompt = new SelectionPrompt<string>()
+                        .Title("[grey]Select an effect you want to play:[/]")
+                        .AddChoices(keys.Values.ToArray()) // Add the keys as choices
+                        .HighlightStyle(new Style(foreground: Color.LightSkyBlue1)) // Subtle blue highlight for selected option
+                        .Mode(SelectionMode.Leaf) // Leaf mode for modern selection UX
+                        .WrapAround(true)
+                        .UseConverter(text => $"[dim white]»[/] [white]{text}[/]");
+
+                    // Get the selected value from the prompt
+                    string selectedKey = AnsiConsole.Prompt(prompt);
+
+                    // Check if the selected key is "Exit"
+                    if (selectedKey == "Exit") break;
+
+                    switch (selectedKey.Split(' ')[0])
+                    {
+                        case "Subscription":
+                            await testLampEffectService
+                                    .Test("Testing Subscription Effect")
+                                    .Effect(EffectPalette.Subscription)
+                                    .ExecuteAsync();
+                            break;
+                        case "GiftedSubscription":
+                            await testLampEffectService
+                                    .Test("Testing Subscription Effect")
+                                    .Effect(EffectPalette.GiftedSubscription)
+                                    .ExecuteAsync();
+                            break;
+                        case "Follow":
+                            await testLampEffectService
+                                    .Test("Testing Subscription Effect")
+                                    .Effect(EffectPalette.Follow)
+                                    .ExecuteAsync();
+                            break;
+                    }
+
+                    break;
+                case 3:
                     AnsiConsole.Markup("[yellow]Opening app configuration for editing...[/]\n");
                     await configurationEditor.EditConfigurationAsync(); // Start the main application
                     break;
-                case 3:
+                case 4:
                     AnsiConsole.Markup("[green]Starting the application...[/]\n");
                     await StartApp(); // Start the main application
                     break;
-                case 4:
+                case 5:
                     AnsiConsole.Markup("[red]Exiting application...[/]\n");
                     Environment.Exit(0);
                     break;
@@ -210,6 +259,7 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
         // Display Twitch configuration status
         string twitchStatus = twitchConfigured ? "[green]Complete[/]" : "[red]Incomplete[/]";
         table.AddRow($"[bold gold3_1]1.[/] [white]Connect to Twitch[/] ({twitchStatus})");
+        table.AddRow("[bold gold3_1]3.[/] [white]Test Lamp Effects[/]");
         table.AddRow("[bold gold3_1]3.[/] [white]Edit App Configuration[/]");
         table.AddRow("[bold gold3_1]4.[/] [white]Start App[/]");
         table.AddRow("[bold gold3_1]5.[/] [white]Quit Application[/]");
@@ -228,15 +278,16 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
             .Title("[grey]Select an option:[/]")
             .AddChoices(new[] {
             twitchConfigured ? -1 : 1, // Disable Twitch connect if already configured
-            2, 3, 4 // App Configuration, Start, and Quit options are always enabled
+            2, 3, 4, 5 // App Configuration, Start, and Quit options are always enabled
             })
             .UseConverter(option => option switch
             {
                 1 => "[dim white]»[/] [white]Connect to Twitch[/]",
                 -1 => "[dim grey]»[/] [grey]Connect to Twitch (Configured)[/]",  // Disabled menu for Twitch
-                2 => "[dim white]»[/] [white]Edit App Configuration[/]",
-                3 => "[dim white]»[/] [white]Start App[/]",
-                4 => "[dim white]»[/] [white]Exit[/]",
+                2 => "[dim white]»[/] [white]Test Lamp Effects[/]",
+                3 => "[dim white]»[/] [white]Edit App Configuration[/]",
+                4 => "[dim white]»[/] [white]Start App[/]",
+                5 => "[dim white]»[/] [white]Exit[/]",
                 _ => "[dim white]»[/] [white]Unknown Option[/]"
             })
             .HighlightStyle(new Style(foreground: Color.LightSkyBlue1)) // Subtle blue highlight for selected option
@@ -389,9 +440,18 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
             bool result = await hueController.StartPollingForLinkButtonAsync("YukiDanceParty", "MyDevice", configuration["bridgeIp"], configuration["AppKey"]);
             if (result)
             {
+                string wsstring = ""; // Choose the appropriate websocket based on the environment
                 const string ws = "wss://eventsub.wss.twitch.tv/ws"; // Twitch EventSub websocket endpoint
                 const string localws = "ws://127.0.0.1:8080/ws"; // Local websocket for development
-                string wsstring = localws; // Choose the appropriate websocket based on the environment
+                if (argsService.Args.Contains("local"))
+                {
+                    wsstring = localws;
+                }
+                else
+                {
+                    wsstring = ws;
+
+                }
 
                 await eventSubListener.ValidateAndConnectAsync(new Uri(wsstring)); // Connect to the EventSub websocket
                 await eventSubListener.ListenForEventsAsync(); // Start listening for events

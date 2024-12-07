@@ -22,9 +22,8 @@ internal interface ITwitchEventSubListener
 // Implementation of the Twitch EventSub listener.
 internal class TwitchEventSubListener(IConfiguration configuration, TwitchLib.Api.TwitchAPI api,
 IJsonFileController jsonFileController, ArgsService argsService, ITwitchHttpClient twitchHttpClient,
-IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : ITwitchEventSubListener
+IHexColorMapDictionary hexColorMapDictionary, IHueController hueController, ILampEffectQueueService lampEffectQueueService) : ITwitchEventSubListener
 {
-    private Channel<Func<Task>> _effectQueue;
     private readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions
     {
         PropertyNameCaseInsensitive = true,
@@ -75,11 +74,6 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
         _webSocket.Options.SetRequestHeader("Client-Id", configuration["ClientId"]);
         _webSocket.Options.SetRequestHeader("Authorization", $"Bearer {api.Settings.AccessToken}");
         _webSocket.Options.SetRequestHeader("Content-Type", "application/json");
-        _effectQueue = Channel.CreateUnbounded<Func<Task>>(new UnboundedChannelOptions
-        {
-            SingleReader = true
-        });
-        StartQueueProcessor();
         await _webSocket.ConnectAsync(websocketUrl, CancellationToken.None);
     }
 
@@ -636,55 +630,46 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController) : IT
     private async Task HandleLampColorCommandAsync(string lamp, string color, string RedeemUsername)
     {
         RGBColor finalColor = await GetColorAsync(color, RedeemUsername); // Resolve the color input.
-        await _effectQueue.Writer.WriteAsync(async () =>
-        {
-            try
-            {
-                await hueController.SetLampColorAsync(lamp, finalColor); // Set the lamp color using the resolved RGB value.
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex);
-            }
-        });
-    }
 
+        await lampEffectQueueService.EnqueueEffectAsync(async () =>
+            {
+                try
+                {
+                    await hueController.SetLampColorAsync(lamp, finalColor); // Set the lamp color using the resolved RGB value.
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error executing lamp effect: {ex}");
+                }
+            });
+
+    }
 
     private async Task HandleLampEffectsCommand(EffectPalette EffectType, string lamp)
     {
         var LightList = hueController.CreateCustomEffect(EffectType);
         await hueController.RunEffect(LightList, lamp);
     }
+
     private async Task HandleLampEffectsCommand(EffectPalette EffectType)
     {
         var LightList = hueController.CreateCustomEffect(EffectType);
 
-        await _effectQueue.Writer.WriteAsync(async () =>
-        {
-            try
+        await lampEffectQueueService.EnqueueEffectAsync(async () =>
             {
-                await hueController.RunEffect(LightList, null);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex);
-            }
-        });
+                try
+                {
+                    await hueController.RunEffect(LightList, null);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error executing lamp effect: {ex}");
+                }
+            });
+
+        await hueController.RunEffect(LightList, null);
+
     }
-
-    private Task _queueProcessorTask;
-
-    private void StartQueueProcessor()
-    {
-        _queueProcessorTask = Task.Run(async () =>
-        {
-            await foreach (var effectAction in _effectQueue.Reader.ReadAllAsync())
-            {
-                await effectAction();
-            }
-        });
-    }
-
 
     // Method to resolve the color input into an RGB color.
     private async Task<RGBColor> GetColorAsync(string color, string RedeemUsername)

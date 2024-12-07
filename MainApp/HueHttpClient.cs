@@ -68,7 +68,7 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
     {
         { EffectPalette.Default, new List<XyPosition> { Xy.Blue, Xy.Green, Xy.Red } },
         { EffectPalette.Subscription, new List<XyPosition> { Xy.Blue, Xy.Red, } },
-        { EffectPalette.GiftedSubscription, new List<XyPosition> { Xy.Green, Xy.Yellow, } },
+        { EffectPalette.GiftedSubscription, new List<XyPosition> { Xy.Green, Xy.Purple, } },
         { EffectPalette.Bits, new List<XyPosition> { Xy.Green, Xy.Yellow } },
         { EffectPalette.Follow, new List<XyPosition> { Xy.Yellow, Xy.Green } },
         { EffectPalette.Raid, new List<XyPosition> { Xy.Orange, Xy.Purple}}
@@ -256,8 +256,6 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
     public async Task RunEffect(List<UpdateLight> updateEffectUpdates, string? lamp = null,CancellationToken cancellationToken = default,
         int durationMs = 5000)
     {
-        // Validate inputs
-        // Determine target lights
         Guid[] LightIdList = [];
         if (lamp == null)
         {
