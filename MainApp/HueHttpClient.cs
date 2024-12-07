@@ -35,7 +35,6 @@ internal readonly struct Xy
     internal static readonly XyPosition Orange = new() { X = 0.5562, Y = 0.4084 };
     internal static readonly XyPosition Peach = new() { X = 0.4800, Y = 0.3700 };
     internal static readonly XyPosition Purple = new() { X = 0.3457, Y = 0.1700 };
-    internal static readonly XyPosition Teal = new() { X = 0.2000, Y = 0.3300 };
     internal static readonly XyPosition SkyBlue = new() { X = 0.2000, Y = 0.2200 };
     internal static readonly XyPosition HotPink = new() { X = 0.4800, Y = 0.2600 };
     internal static readonly XyPosition LimeGreen = new() { X = 0.3000, Y = 0.6000 };
@@ -56,7 +55,7 @@ internal interface IHueController : IDisposable
 // Implementation of the IHueController interface
 internal class HueController(IJsonFileController jsonController, IConfiguration configuration) : IHueController
 {
-    // Service for discovering Hue bridges over the network
+    private bool _disposed = false;
     private readonly IBridgeLocator _bridgeLocator = new HttpBridgeLocator();
     private readonly HttpClient _httpClient = new(); // HTTP client for making API requests
     private LocalHueApi _hueClient; // Client for interacting with the Hue bridge API
@@ -70,7 +69,7 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
         { EffectPalette.Subscription, new List<XyPosition> { Xy.Blue, Xy.Red, } },
         { EffectPalette.GiftedSubscription, new List<XyPosition> { Xy.Green, Xy.Purple, } },
         { EffectPalette.Bits, new List<XyPosition> { Xy.Green, Xy.Yellow } },
-        { EffectPalette.Follow, new List<XyPosition> { Xy.Yellow, Xy.Green } },
+        { EffectPalette.Follow, new List<XyPosition> { Xy.Cyan, Xy.Magenta, Xy.Blue, Xy.Peach } },
         { EffectPalette.Raid, new List<XyPosition> { Xy.Orange, Xy.Purple}}
     };
 
@@ -240,6 +239,7 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
         }
 
         List<UpdateLight> te = [];
+
         foreach (var color in colors)
         {
             te.Add(new UpdateLight().SetColor(XyPositionExtensions.ToRGBColor(color)));
@@ -253,7 +253,7 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
             EffectType
         );
     }
-    public async Task RunEffect(List<UpdateLight> updateEffectUpdates, string? lamp = null,CancellationToken cancellationToken = default,
+    public async Task RunEffect(List<UpdateLight> updateEffectUpdates, string? lamp = null, CancellationToken cancellationToken = default,
         int durationMs = 5000)
     {
         Guid[] LightIdList = [];
@@ -351,10 +351,34 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
         _pollingTimer = null;
     }
 
-    // Disposes of resources used by the controller
     public void Dispose()
     {
         _httpClient.Dispose(); // Dispose of the HTTP client
         StopPolling(); // Stop and dispose of the polling timer if active
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    // Protected method to dispose resources
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+            return;
+
+        if (disposing)
+        {
+            // Dispose managed resources
+            _hueClient = null;
+        }
+
+        // Release unmanaged resources if any
+
+        _disposed = true;
+    }
+
+    // Destructor (finalizer) in case Dispose is not called
+    ~HueController()
+    {
+        Dispose(false);
     }
 }

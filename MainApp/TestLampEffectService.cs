@@ -53,7 +53,5 @@ class TestLampEffectService(IHueController hueController, ILampEffectQueueServic
                     Console.WriteLine($"Error executing lamp effect: {ex}");
                 }
             });
-
-        Console.WriteLine($"Test '{_currentTestDescription}' completed.");
     }
 }

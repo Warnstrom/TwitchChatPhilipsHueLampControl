@@ -170,52 +170,52 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
                     await ConfigureTwitchTokens(); // Handle Twitch token configuration
                     break;
                 case 2:
-                    await hueController.StartPollingForLinkButtonAsync("YukiDanceParty", "MyDevice", configuration["bridgeIp"], configuration["AppKey"]);
-                    AnsiConsole.Markup("[yellow]Opening Lamp Effect Testing[/]\n");
-                    var keys = new Dictionary<int, string>
+                    using (var success = hueController.StartPollingForLinkButtonAsync("YukiDanceParty", "MyDevice", configuration["bridgeIp"], configuration["AppKey"]))
+                    {
+                        AnsiConsole.Markup("[yellow]Opening Lamp Effect Testing[/]\n");
+                        var keys = new Dictionary<int, string>
                         {
                             { 0, "Exit" },
                             { 1, "Subscription" },
                             { 2, "GiftedSubscription" },
                             { 3, "Follow" },
                         };
-                    // Create a prompt for the user to select a configuration key to edit
-                    var prompt = new SelectionPrompt<string>()
-                        .Title("[grey]Select an effect you want to play:[/]")
-                        .AddChoices(keys.Values.ToArray()) // Add the keys as choices
-                        .HighlightStyle(new Style(foreground: Color.LightSkyBlue1)) // Subtle blue highlight for selected option
-                        .Mode(SelectionMode.Leaf) // Leaf mode for modern selection UX
-                        .WrapAround(true)
-                        .UseConverter(text => $"[dim white]»[/] [white]{text}[/]");
+                        // Create a prompt for the user to select a configuration key to edit
+                        var prompt = new SelectionPrompt<string>()
+                            .Title("[grey]Select an effect you want to play:[/]")
+                            .AddChoices(keys.Values.ToArray()) // Add the keys as choices
+                            .HighlightStyle(new Style(foreground: Color.LightSkyBlue1)) // Subtle blue highlight for selected option
+                            .Mode(SelectionMode.Leaf) // Leaf mode for modern selection UX
+                            .WrapAround(true)
+                            .UseConverter(text => $"[dim white]»[/] [white]{text}[/]");
 
-                    // Get the selected value from the prompt
-                    string selectedKey = AnsiConsole.Prompt(prompt);
+                        // Get the selected value from the prompt
+                        string selectedKey = AnsiConsole.Prompt(prompt);
 
-                    // Check if the selected key is "Exit"
-                    if (selectedKey == "Exit") break;
-
-                    switch (selectedKey.Split(' ')[0])
-                    {
-                        case "Subscription":
-                            await testLampEffectService
-                                    .Test("Testing Subscription Effect")
-                                    .Effect(EffectPalette.Subscription)
-                                    .ExecuteAsync();
-                            break;
-                        case "GiftedSubscription":
-                            await testLampEffectService
-                                    .Test("Testing Subscription Effect")
-                                    .Effect(EffectPalette.GiftedSubscription)
-                                    .ExecuteAsync();
-                            break;
-                        case "Follow":
-                            await testLampEffectService
-                                    .Test("Testing Subscription Effect")
-                                    .Effect(EffectPalette.Follow)
-                                    .ExecuteAsync();
-                            break;
+                        // Check if the selected key is "Exit"}
+                        if (selectedKey == "Exit") break;
+                        switch (selectedKey)
+                        {
+                            case "Subscription":
+                                await testLampEffectService
+                                        .Test("Testing Subscription Effect")
+                                        .Effect(EffectPalette.Subscription)
+                                        .ExecuteAsync();
+                                break;
+                            case "GiftedSubscription":
+                                await testLampEffectService
+                                        .Test("Testing Gifted Subscription Effect")
+                                        .Effect(EffectPalette.GiftedSubscription)
+                                        .ExecuteAsync();
+                                break;
+                            case "Follow":
+                                await testLampEffectService
+                                        .Test("Testing Follow Effect")
+                                        .Effect(EffectPalette.Follow)
+                                        .ExecuteAsync();
+                                break;
+                        }
                     }
-
                     break;
                 case 3:
                     AnsiConsole.Markup("[yellow]Opening app configuration for editing...[/]\n");

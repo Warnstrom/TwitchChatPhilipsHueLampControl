@@ -24,18 +24,12 @@ namespace TwitchChatHueControls
             StartQueueProcessor();
         }
 
-        /// <summary>
-        /// Enqueue a new effect action.
-        /// </summary>
         public async Task EnqueueEffectAsync(Func<Task> effectAction)
         {
             ArgumentNullException.ThrowIfNull(effectAction);
             await _effectQueue.Writer.WriteAsync(effectAction);
         }
 
-        /// <summary>
-        /// Start processing the queue.
-        /// </summary>
         private void StartQueueProcessor()
         {
             _queueProcessorTask = Task.Run(async () =>
@@ -54,9 +48,6 @@ namespace TwitchChatHueControls
             });
         }
 
-        /// <summary>
-        /// Stop the queue processor.
-        /// </summary>
         public async Task StopAsync()
         {
             _effectQueue.Writer.Complete();
