@@ -1,13 +1,12 @@
-name: .NET Cross-Platform Release
+name: Continuous Development Release
 
 on:
   push:
-    tags:
-      - 'dev*' # Triggers on version tags like v1.0.0
+    branches:
+      - main
 
 jobs:
-  build-and-release:
-    name: Build and Release
+  create-or-update-dev-release:
     runs-on: ubuntu-latest
     
     steps:
@@ -17,7 +16,28 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '8.0.x' # Adjust to your project's .NET version
+        dotnet-version: '7.0.x' # Adjust to your project's .NET version
+    
+    # Generate a consistent dev tag based on current date
+    - name: Generate Dev Tag
+      id: generate-tag
+      run: |
+        DEV_TAG=dev_$(date +'%Y%m%d')
+        echo "tag=$DEV_TAG" >> $GITHUB_OUTPUT
+    
+    # Check if release already exists
+    - name: Check Existing Release
+      id: check-release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        # Try to find an existing release with the generated tag
+        RELEASE_EXISTS=$(gh release list | grep "${{ steps.generate-tag.outputs.tag }}" || true)
+        if [ -n "$RELEASE_EXISTS" ]; then
+          echo "existing_release=true" >> $GITHUB_OUTPUT
+        else
+          echo "existing_release=false" >> $GITHUB_OUTPUT
+        fi
     
     - name: Publish Windows Executable
       run: |
@@ -46,12 +66,31 @@ jobs:
         zip -r ../publish_linux.zip *
         cd ../../../
     
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
-      with:
-        files: |
-          ./bin/Release/publish_windows.zip
-          ./bin/Release/publish_linux.zip
-        generate_release_notes: true
+    # Create a new release if one doesn't exist
+    - name: Create New Development Release
+      if: steps.check-release.outputs.existing_release == 'false'
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh release create ${{ steps.generate-tag.outputs.tag }} \
+          ./bin/Release/publish_windows.zip \
+          ./bin/Release/publish_linux.zip \
+          --title "Development Release ${{ steps.generate-tag.outputs.tag }}" \
+          --notes "Automated development build" \
+          --target main
+    
+    # Update existing release if it already exists
+    - name: Update Existing Development Release
+      if: steps.check-release.outputs.existing_release == 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        # Delete existing assets
+        RELEASE_TAG=${{ steps.generate-tag.outputs.tag }}
+        gh release delete-asset $RELEASE_TAG publish_windows.zip || true
+        gh release delete-asset $RELEASE_TAG publish_linux.zip || true
+        
+        # Upload new assets
+        gh release upload $RELEASE_TAG \
+          ./bin/Release/publish_windows.zip \
+          ./bin/Release/publish_linux.zip
