@@ -179,6 +179,7 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
                             { 1, "Subscription" },
                             { 2, "GiftedSubscription" },
                             { 3, "Follow" },
+                            { 4, "Cheer" },
                         };
                         // Create a prompt for the user to select a configuration key to edit
                         var prompt = new SelectionPrompt<string>()
@@ -214,16 +215,22 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
                                         .Effect(EffectPalette.Follow)
                                         .ExecuteAsync();
                                 break;
+                            case "Cheer":
+                                await testLampEffectService
+                                        .Test("Testing Cheer Effect")
+                                        .Effect(EffectPalette.Cheer)
+                                        .ExecuteAsync();
+                                break;
                         }
                     }
                     break;
                 case 3:
                     AnsiConsole.Markup("[yellow]Opening app configuration for editing...[/]\n");
-                    await configurationEditor.EditConfigurationAsync(); // Start the main application
+                    await configurationEditor.EditConfigurationAsync();
                     break;
                 case 4:
                     AnsiConsole.Markup("[green]Starting the application...[/]\n");
-                    await StartApp(); // Start the main application
+                    await StartApp();
                     break;
                 case 5:
                     AnsiConsole.Markup("[red]Exiting application...[/]\n");
@@ -275,7 +282,6 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
 
         // Prompt the user to select an option
         var prompt = new SelectionPrompt<int>()
-            .Title("[grey]Select an option:[/]")
             .AddChoices(new[] {
             twitchConfigured ? -1 : 1, // Disable Twitch connect if already configured
             2, 3, 4, 5 // App Configuration, Start, and Quit options are always enabled

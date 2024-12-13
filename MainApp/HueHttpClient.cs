@@ -8,7 +8,6 @@ using Spectre.Console;
 using Microsoft.Extensions.Configuration;
 using HueApi.ColorConverters.Original.Extensions;
 using HueApi.Models;
-using System.Text;
 using System.Diagnostics;
 
 namespace TwitchChatHueControls;
@@ -20,6 +19,7 @@ internal enum EffectPalette
     Raid,
     Follow,
     Bits,
+    Cheer,
 }
 
 // Predefined XY color positions for common colors
@@ -70,7 +70,8 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
         { EffectPalette.GiftedSubscription, new List<XyPosition> { Xy.Green, Xy.Purple, } },
         { EffectPalette.Bits, new List<XyPosition> { Xy.Green, Xy.Yellow } },
         { EffectPalette.Follow, new List<XyPosition> { Xy.Cyan, Xy.Magenta, Xy.Blue, Xy.Peach } },
-        { EffectPalette.Raid, new List<XyPosition> { Xy.Orange, Xy.Purple}}
+        { EffectPalette.Raid, new List<XyPosition> { Xy.Orange, Xy.Purple}},
+        { EffectPalette.Cheer, new List<XyPosition> { Xy.Orange, Xy.Blue, Xy.Green }}
     };
 
     // Discovers Hue bridges on the local network
@@ -270,10 +271,9 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
 
         // Use stopwatch for more precise timing
         var stopwatch = Stopwatch.StartNew();
-
         try
         {
-            Console.WriteLine("Request Started");
+            Console.WriteLine("Effect request Started");
             while (stopwatch.ElapsedMilliseconds < durationMs)
             {
                 // Check for cancellation
@@ -298,7 +298,7 @@ internal class HueController(IJsonFileController jsonController, IConfiguration 
         }
         finally
         {
-            Console.WriteLine("Request completed");
+            Console.WriteLine("Effect request completed");
             stopwatch.Stop();
         }
     }
