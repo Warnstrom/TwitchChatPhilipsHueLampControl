@@ -41,9 +41,13 @@
     <Copy SourceFiles="@(UpdaterWindowsFiles)" DestinationFolder="$(PublishDir)/Updater/win-x64/" />
   </Target>
 
-  <ItemGroup>
-    <UpdaterLinuxFiles Include="../Updater/bin/Release/publish_linux/**/*" />
-    <UpdaterWindowsFiles Include="../Updater/bin/Release/publish_windows/**/*" />
-</ItemGroup>
+<ItemGroup>
+  <UpdaterLinuxFiles Include="../Updater/bin/Release/net8.0/publish/TwitchChatHueUpdater.dll" />
+  <UpdaterLinuxFiles Include="../Updater/bin/Release/net8.0/publish/TwitchChatHueUpdater.pdb" />
+  <UpdaterLinuxFiles Include="../Updater/bin/Release/net8.0/publish/*.json" />
 
+  <UpdaterWindowsFiles Include="../Updater/bin/Release/net8.0/publish/TwitchChatHueUpdater.dll" />
+  <UpdaterWindowsFiles Include="../Updater/bin/Release/net8.0/publish/TwitchChatHueUpdater.pdb" />
+  <UpdaterWindowsFiles Include="../Updater/bin/Release/net8.0/publish/*.json" />
+</ItemGroup>
 </Project>
