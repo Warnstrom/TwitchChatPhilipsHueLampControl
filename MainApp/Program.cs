@@ -252,7 +252,7 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
 
         // Create a visually appealing table for the start menu
         var table = new Table()
-            .Title("[underline bold yellow]Welcome To Yuki's Disco Light Party[/]")  // Title of the application
+.Title("[bold italic underline yellow]Welcome To Yuki's Disco[/]")
             .Border(TableBorder.Rounded)                                              // Rounded borders for a friendly look
             .BorderColor(Color.DeepSkyBlue4)                                           // Border color
             .BorderStyle(borderStyle)                                                  // Border style with bold text
