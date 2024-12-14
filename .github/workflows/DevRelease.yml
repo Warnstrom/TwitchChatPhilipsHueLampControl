@@ -82,7 +82,6 @@ jobs:
         dotnet publish -c Release -r win-x64 --self-contained true \
         -p:PublishSingleFile=true \
         -p:EnableCompressionInSingleFile=true \
-        -p:PublishReadyToRun=true \
         -o ./bin/Release/publish_windows-x64
         cd ./bin/Release/publish_windows-x64
         zip -r ../publish_windows.zip *

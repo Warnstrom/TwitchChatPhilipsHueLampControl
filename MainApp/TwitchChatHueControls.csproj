@@ -42,12 +42,7 @@
   </Target>
 
 <ItemGroup>
-  <UpdaterLinuxFiles Include="../Updater/bin/Release/net8.0/publish/TwitchChatHueUpdater.dll" />
-  <UpdaterLinuxFiles Include="../Updater/bin/Release/net8.0/publish/TwitchChatHueUpdater.pdb" />
-  <UpdaterLinuxFiles Include="../Updater/bin/Release/net8.0/publish/*.json" />
-
-  <UpdaterWindowsFiles Include="../Updater/bin/Release/net8.0/publish/TwitchChatHueUpdater.dll" />
-  <UpdaterWindowsFiles Include="../Updater/bin/Release/net8.0/publish/TwitchChatHueUpdater.pdb" />
-  <UpdaterWindowsFiles Include="../Updater/bin/Release/net8.0/publish/*.json" />
+  <UpdaterLinuxPublishFiles Include="../Updater/bin/Release/net8.0/publish/*" />
+  <UpdaterWindowsPublishFiles Include="../Updater/bin/Release/net8.0/publish/*" />
 </ItemGroup>
 </Project>
