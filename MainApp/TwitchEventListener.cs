@@ -5,8 +5,6 @@ using Spectre.Console;
 using HueApi.ColorConverters;
 using Microsoft.Extensions.Configuration;
 using TwitchChatHueControls.Models;
-using System.Security.Principal;
-using System.Threading.Channels;
 
 namespace TwitchChatHueControls;
 
