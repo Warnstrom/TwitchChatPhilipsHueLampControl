@@ -15,13 +15,53 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '7.0.x' # Adjust to your project's .NET version
+        dotnet-version: '7.0.x'
 
-    # Generate a consistent dev tag based on current date
+    # Get the latest release to determine the next version
+    - name: Get Latest Release
+      id: get-latest-release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        # Try to get the latest dev release
+        LATEST_RELEASE=$(gh release list --limit 1 | grep "dev_" | awk '{print $1}' || echo "")
+
+        if [ -z "$LATEST_RELEASE" ]; then
+          # If no previous release, start at 0.1.0
+          echo "version=0.1.0" >> $GITHUB_OUTPUT
+        else
+          # Extract current version and increment
+          CURRENT_VERSION=$(echo "$LATEST_RELEASE" | sed -E 's/dev_[0-9]{8}-v?//')
+
+          # Split version into components
+          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+
+          # Increment patch version
+          NEW_PATCH=$((PATCH + 1))
+
+          # Handle patch version rollover
+          if [ $NEW_PATCH -ge 10 ]; then
+            NEW_PATCH=0
+            MINOR=$((MINOR + 1))
+          fi
+
+          # Handle minor version rollover
+          if [ $MINOR -ge 10 ]; then
+            MINOR=0
+            MAJOR=$((MAJOR + 1))
+          fi
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        fi
+
+    # Generate a consistent dev tag based on current date and version
     - name: Generate Dev Tag
       id: generate-tag
       run: |
-        DEV_TAG=dev_$(date +'%Y%m%d')
+        DEV_TAG=dev_$(date +'%Y%m%d')-v${{ steps.get-latest-release.outputs.version }}
         echo "tag=$DEV_TAG" >> $GITHUB_OUTPUT
 
     # Check if release already exists
@@ -30,7 +70,6 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        # Try to find an existing release with the generated tag
         RELEASE_EXISTS=$(gh release list | grep "${{ steps.generate-tag.outputs.tag }}" || true)
         if [ -n "$RELEASE_EXISTS" ]; then
           echo "existing_release=true" >> $GITHUB_OUTPUT
@@ -40,25 +79,21 @@ jobs:
 
     - name: Publish Windows Executable
       run: |
-        # Publish Windows x64 executable
         dotnet publish -c Release -r win-x64 --self-contained true \
         -p:PublishSingleFile=true \
         -p:EnableCompressionInSingleFile=true \
         -p:PublishReadyToRun=true \
         -o ./bin/Release/publish_windows-x64
-        # Zip Windows artifacts
         cd ./bin/Release/publish_windows-x64
         zip -r ../publish_windows.zip *
         cd ../../../
 
     - name: Publish Linux Executable
       run: |
-        # Publish Linux x64 executable
         dotnet publish -c Release -r linux-x64 --self-contained true \
         -p:PublishSingleFile=true \
         -p:EnableCompressionInSingleFile=true \
         -o ./bin/Release/publish_linux-x64
-        # Zip Linux artifacts
         cd ./bin/Release/publish_linux-x64
         zip -r ../publish_linux.zip *
         cd ../../../
@@ -71,21 +106,18 @@ jobs:
         gh release create ${{ steps.generate-tag.outputs.tag }} \
           ./bin/Release/publish_windows.zip \
           ./bin/Release/publish_linux.zip \
-          --title "v1.0.0 Development Release ${{ steps.generate-tag.outputs.tag }}" \
+          --title "Development Release v${{ steps.get-latest-release.outputs.version }}" \
           --notes "Automated development build" \
           --target dev
 
-    # Update existing release if it already exists
     - name: Update Existing Development Release
       if: steps.check-release.outputs.existing_release == 'true'
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        # Delete existing assets
         RELEASE_TAG=${{ steps.generate-tag.outputs.tag }}
         gh release delete-asset $RELEASE_TAG publish_windows.zip || true
         gh release delete-asset $RELEASE_TAG publish_linux.zip || true
-        # Upload new assets
         gh release upload $RELEASE_TAG \
           ./bin/Release/publish_windows.zip \
           ./bin/Release/publish_linux.zip
