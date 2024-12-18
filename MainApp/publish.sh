@@ -19,4 +19,4 @@ cd ./bin/Release/publish_windows-x64
 zip -r ../publish_windows.zip *
 
 #dotnet publish -c Release -r linux-x64 --self-contained -o ./bin/Release/net8.0/linux-x64/publish/
-# Test
+# Test1
