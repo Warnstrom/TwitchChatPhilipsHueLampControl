@@ -109,4 +109,6 @@ jobs:
         gh release delete-asset $RELEASE_TAG publish_linux.zip || true
         gh release upload $RELEASE_TAG \
           ./bin/Release/publish_windows.zip \
-          ./bin/Release/publish_linux.zip
+          ./bin/Release/publish_linux.zip \
+          --title "Development Release ${{ steps.increment-version.outputs.version }}" \
+          --notes "Updated automated development build"
