@@ -3,7 +3,11 @@ using Microsoft.Extensions.Configuration;
 using Spectre.Console;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
 namespace TwitchChatHueControls;
 
 internal interface ITwitchHttpClient

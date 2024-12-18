@@ -1,13 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>TwitchChatHueControls</RootNamespace>
-    <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''"></RuntimeIdentifier>
+    <PublishDir>$(OutputPath)publish/</PublishDir>
+    <OutputType>Exe</OutputType>
+    <SelfContained>true</SelfContained>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="HueApi" Version="1.7.0" />
     <PackageReference Include="HueApi.ColorConverters" Version="1.7.1" />
@@ -31,18 +31,36 @@
   <None Update="example-appsettings.json">
     <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
   </None>
-</ItemGroup>
-<ItemGroup>
-  <ProjectReference Include="..\Updater\TwitchChatHueUpdater.csproj" />
-</ItemGroup>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Updater\TwitchChatHueUpdater.csproj" />
+  </ItemGroup>
 
-  <Target Name="CopyUpdaterFiles" AfterTargets="Publish">
-    <Copy SourceFiles="@(UpdaterLinuxFiles)" DestinationFolder="$(PublishDir)/Updater/linux-x64/" />
-    <Copy SourceFiles="@(UpdaterWindowsFiles)" DestinationFolder="$(PublishDir)/Updater/win-x64/" />
+  <!-- Custom target to publish Updater and copy files -->
+  <Target Name="PublishUpdaterProject" AfterTargets="Publish">
+    <!-- Define directories -->
+    <PropertyGroup>
+      <BasePublishDir>$(PublishDir)</BasePublishDir>
+      <UpdaterPublishDir>$(BasePublishDir)Updater\</UpdaterPublishDir>
+    </PropertyGroup>
+
+    <!-- Debugging messages to check paths -->
+    <Message Text="BasePublishDir: $(BasePublishDir)" Importance="high" />
+    <Message Text="UpdaterPublishDir: $(UpdaterPublishDir)" Importance="high" />
+
+    <!-- Publish the Updater project -->
+    <MSBuild Projects="..\Updater\TwitchChatHueUpdater.csproj"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);PublishDir=$(UpdaterPublishDir)" />
+
+    <!-- Collect Updater files -->
+    <ItemGroup>
+      <UpdaterFiles Include="$(UpdaterPublishDir)**\*" />
+    </ItemGroup>
+
+    <!-- Copy Updater files to the main publish directory -->
+    <Copy SourceFiles="@(UpdaterFiles)"
+          DestinationFolder="$(BasePublishDir)Updater\%(RecursiveDir)"
+          SkipUnchangedFiles="true" />
   </Target>
-
-<ItemGroup>
-  <UpdaterLinuxPublishFiles Include="../Updater/bin/Release/net8.0/publish/*" />
-  <UpdaterWindowsPublishFiles Include="../Updater/bin/Release/net8.0/publish/*" />
-</ItemGroup>
 </Project>

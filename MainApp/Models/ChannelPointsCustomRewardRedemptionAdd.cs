@@ -1,3 +1,5 @@
+using System;
+
 namespace TwitchChatHueControls.Models;
 
 internal record ChannelPointsCustomRewardRedemptionAdd(

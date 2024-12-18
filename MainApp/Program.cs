@@ -3,6 +3,12 @@ using Microsoft.Extensions.Configuration;
 using Spectre.Console;
 using System.Text;
 using TwitchLib.Api.Core.Exceptions;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using System.IO;
+
 namespace TwitchChatHueControls;
 public class Program
 {
@@ -128,7 +134,7 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
                     var prompt = new SelectionPrompt<string>()
                         .Title("[white]Would you like to update now or later?[/]")
                         .AddChoices(new[] { "Update now", "Later", "Read More" }) // Menu options
-                        .HighlightStyle(new Style(foreground: Color.LightSkyBlue1)) // Subtle blue highlight for the selected option
+                        .HighlightStyle(new Style(foreground: Spectre.Console.Color.LightSkyBlue1)) // Subtle blue highlight for the selected option
                         .Mode(SelectionMode.Leaf) // Focuses on the current selection, giving a modern feel
                         .WrapAround(false) // Prevents wrap-around behavior for a more streamlined UX
                         .UseConverter(text => $"[dim white]»[/] [white]{text}[/]"); // Custom converter for a minimal selection icon
@@ -185,7 +191,7 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
                         var prompt = new SelectionPrompt<string>()
                             .Title("[grey]Select an effect you want to play:[/]")
                             .AddChoices(keys.Values.ToArray()) // Add the keys as choices
-                            .HighlightStyle(new Style(foreground: Color.LightSkyBlue1)) // Subtle blue highlight for selected option
+                            .HighlightStyle(new Style(foreground: Spectre.Console.Color.LightSkyBlue1)) // Subtle blue highlight for selected option
                             .Mode(SelectionMode.Leaf) // Leaf mode for modern selection UX
                             .WrapAround(true)
                             .UseConverter(text => $"[dim white]»[/] [white]{text}[/]");
@@ -248,13 +254,13 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
                                                                      //await ValidateHueConfiguration(); // Validate Hue bridge configuration
 
         // Create a table to structure the menu visually
-        var borderStyle = new Style(foreground: Color.White, decoration: Decoration.Bold);
+        var borderStyle = new Style(foreground: Spectre.Console.Color.White, decoration: Decoration.Bold);
 
         // Create a visually appealing table for the start menu
         var table = new Table()
 .Title("[bold italic underline yellow]Welcome To Yuki's Disco[/]")
             .Border(TableBorder.Rounded)                                              // Rounded borders for a friendly look
-            .BorderColor(Color.DeepSkyBlue4)                                           // Border color
+            .BorderColor(Spectre.Console.Color.DeepSkyBlue4)                                           // Border color
             .BorderStyle(borderStyle)                                                  // Border style with bold text
             .AddColumn(new TableColumn("[bold gold3_1]Main Menu[/]").LeftAligned());   // Left aligned for clearer UX
 
@@ -296,7 +302,7 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
                 5 => "[dim white]»[/] [white]Exit[/]",
                 _ => "[dim white]»[/] [white]Unknown Option[/]"
             })
-            .HighlightStyle(new Style(foreground: Color.LightSkyBlue1)) // Subtle blue highlight for selected option
+            .HighlightStyle(new Style(foreground: Spectre.Console.Color.LightSkyBlue1)) // Subtle blue highlight for selected option
             .Mode(SelectionMode.Leaf) // Leaf mode for modern selection UX
             .WrapAround(false)        // Disable wrap-around behavior
             .PageSize(5);             // Fit all options on one page
@@ -522,7 +528,7 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
             // Display a success message with the user information
             AnsiConsole.Write(
                 new Panel($"[bold green]Authorization success![/]\n\n[bold aqua]User:[/] {user.DisplayName} (id: {user.Id})\n[bold aqua]Scopes:[/] :{string.Join(", ", resp.Scopes)}")
-                .BorderColor(Color.Green)
+                .BorderColor(Spectre.Console.Color.Green)
             );
             return true;
         }

@@ -1,4 +1,7 @@
 using System.Threading.Channels;
+using System;
+using System.Threading.Tasks;
+using System.Threading;
 
 namespace TwitchChatHueControls
 {

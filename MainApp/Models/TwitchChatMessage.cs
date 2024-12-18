@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace TwitchChatHueControls.Models;
 
 internal record TwitchChatMessage(

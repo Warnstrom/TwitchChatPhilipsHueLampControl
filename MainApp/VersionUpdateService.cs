@@ -1,9 +1,15 @@
 using Microsoft.Extensions.Configuration;
 using Octokit;
 using Spectre.Console;
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.IO.Compression;
+using System.Linq;
+using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 
 namespace TwitchChatHueControls;
 

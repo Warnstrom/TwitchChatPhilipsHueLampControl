@@ -1,5 +1,10 @@
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Nodes;
+using System;
+using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
+
 namespace TwitchChatHueControls;
 
 public interface IBridgeValidator

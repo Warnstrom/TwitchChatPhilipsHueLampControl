@@ -9,6 +9,12 @@ using Microsoft.Extensions.Configuration;
 using HueApi.ColorConverters.Original.Extensions;
 using HueApi.Models;
 using System.Diagnostics;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
+using System.Threading;
 
 namespace TwitchChatHueControls;
 internal enum EffectPalette
