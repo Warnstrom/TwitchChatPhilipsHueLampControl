@@ -1,4 +1,5 @@
 name: Continuous Development Release
+
 on:
   push:
     branches:
@@ -20,53 +21,6 @@ jobs:
       with:
         dotnet-version: '8.0.x'
 
-    # Get the latest release to determine the next version
-    - name: Get Latest Release
-      id: get-latest-release
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        LATEST_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' || echo "v0.0.0")
-        echo "latest_tag=$LATEST_TAG" >> $GITHUB_ENV
-
-    # Increment the minor version
-    - name: Increment Version
-      id: increment-version
-      run: |
-        LATEST_TAG=${{ env.latest_tag }}
-        LATEST_VERSION=${LATEST_TAG#v}
-
-        # Extract major and minor version (assume vX.Y.Z format)
-        MAJOR=$(echo $LATEST_VERSION | cut -d. -f1)
-        MINOR=$(echo $LATEST_VERSION | cut -d. -f2)
-
-        # Increment the minor version
-        NEXT_MINOR=$((MINOR + 1))
-        NEW_VERSION="v${MAJOR}.${NEXT_MINOR}"
-
-        echo "new_version=$NEW_VERSION" >> $GITHUB_ENV
-        echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
-
-    # Generate a consistent dev tag based on current date and version
-    - name: Generate Dev Tag
-      id: generate-tag
-      run: |
-        DEV_TAG=dev_$(date +'%Y%m%d')-${{ steps.increment-version.outputs.version }}
-        echo "tag=$DEV_TAG" >> $GITHUB_OUTPUT
-
-    # Check if release already exists
-    - name: Check Existing Release
-      id: check-release
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        RELEASE_EXISTS=$(gh release list --limit 100 | grep "${{ steps.generate-tag.outputs.tag }}" || true)
-        if [ -n "$RELEASE_EXISTS" ]; then
-          echo "existing_release=true" >> $GITHUB_OUTPUT
-        else
-          echo "existing_release=false" >> $GITHUB_OUTPUT
-        fi
-
     - name: Publish Windows Executable
       run: |
         dotnet publish -c Release -r win-x64 --self-contained true \
@@ -87,28 +41,40 @@ jobs:
         zip -r ../publish_linux.zip *
         cd ../../../
 
-    - name: Create New Release
-      if: steps.check-release.outputs.existing_release == 'false'
+    - name: Get the latest release
+      id: get_latest_release
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        gh release create ${{ steps.generate-tag.outputs.tag }} \
-          ./bin/Release/publish_windows.zip \
-          ./bin/Release/publish_linux.zip \
-          --title "Development Release ${{ steps.increment-version.outputs.version }}" \
-          --notes "Automated development build" \
-          --target dev
+        latest_release=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' | grep -Eo '[0-9]+\.[0-9]+' || echo "0.0")
+        echo "latest_release=$latest_release" >> $GITHUB_ENV
 
-    - name: Update Existing Development Release
-      if: steps.check-release.outputs.existing_release == 'true'
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Increment version
+      id: increment_version
       run: |
-        RELEASE_TAG=${{ steps.generate-tag.outputs.tag }}
-        gh release delete-asset $RELEASE_TAG publish_windows.zip || true
-        gh release delete-asset $RELEASE_TAG publish_linux.zip || true
-        gh release upload $RELEASE_TAG \
-          ./bin/Release/publish_windows.zip \
-          ./bin/Release/publish_linux.zip \
-          --title "Development Release ${{ steps.increment-version.outputs.version }}" \
-          --notes "Updated automated development build"
+        current_version=${{ env.latest_release }}
+        major=$(echo $current_version | cut -d. -f1)
+        minor=$(echo $current_version | cut -d. -f2)
+        new_version="$major.$((minor+1))"
+        echo "new_version=$new_version" >> $GITHUB_ENV
+
+    - name: Create or Update Release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Get the current date
+        DATE=$(date +'%Y%m%d')
+
+        # Set the release title and tag name
+        RELEASE_TITLE="Development Release v${{ env.new_version }}"
+        TAG_NAME="dev_${DATE}_v${{ env.new_version }}"
+
+        # Check if the release already exists
+        release_exists=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' | grep -E "^$TAG_NAME$" || echo "no")
+
+        # Create or update the release using the GitHub CLI
+        if [ "$release_exists" = "no" ]; then
+          gh release create "$TAG_NAME" ./bin/Release/publish_windows.zip ./bin/Release/publish_linux.zip --title "$RELEASE_TITLE" --target dev
+        else
+          gh release upload "$TAG_NAME" ./bin/Release/publish_windows.zip ./bin/Release/publish_linux.zip --clobber
+        fi
