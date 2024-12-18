@@ -3,11 +3,14 @@ on:
   push:
     branches:
       - dev
+
 permissions:
   contents: write
+
 jobs:
   create-or-update-dev-release:
     runs-on: ubuntu-latest
+
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
@@ -15,7 +18,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '7.0.x'
+        dotnet-version: '8.0.x'
 
     # Get the latest release to determine the next version
     - name: Get Latest Release
@@ -30,25 +33,25 @@ jobs:
           # If no previous release, start at 0.1.0
           echo "version=0.1.0" >> $GITHUB_OUTPUT
         else
-          # Extract current version and increment
-          CURRENT_VERSION=$(echo "$LATEST_RELEASE" | sed -E 's/dev_[0-9]{8}-v?//')
+          # Extract current version from the release tag (dev_<date>-v<version>)
+          CURRENT_VERSION=$(echo "$LATEST_RELEASE" | sed -E 's/dev_[0-9]{8}-v//')
 
           # Split version into components
-          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
-          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
-          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+          MAJOR=$(echo "$CURRENT_VERSION" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT_VERSION" | cut -d. -f2)
+          PATCH=$(echo "$CURRENT_VERSION" | cut -d. -f3)
 
           # Increment patch version
           NEW_PATCH=$((PATCH + 1))
 
           # Handle patch version rollover
-          if [ $NEW_PATCH -ge 10 ]; then
+          if [ "$NEW_PATCH" -ge 10 ]; then
             NEW_PATCH=0
             MINOR=$((MINOR + 1))
           fi
 
           # Handle minor version rollover
-          if [ $MINOR -ge 10 ]; then
+          if [ "$MINOR" -ge 10 ]; then
             MINOR=0
             MAJOR=$((MAJOR + 1))
           fi
@@ -70,7 +73,7 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        RELEASE_EXISTS=$(gh release list | grep "${{ steps.generate-tag.outputs.tag }}" || true)
+        RELEASE_EXISTS=$(gh release list --limit 100 | grep "${{ steps.generate-tag.outputs.tag }}" || true)
         if [ -n "$RELEASE_EXISTS" ]; then
           echo "existing_release=true" >> $GITHUB_OUTPUT
         else

@@ -17,3 +17,5 @@ cd ./bin/Release/publish_windows-x64
 
 # Run the zip command to compress the contents
 zip -r ../publish_windows.zip *
+
+#dotnet publish -c Release -r linux-x64 --self-contained -o ./bin/Release/net8.0/linux-x64/publish/
