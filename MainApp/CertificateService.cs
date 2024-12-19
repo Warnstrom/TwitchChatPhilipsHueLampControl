@@ -1,4 +1,7 @@
+using System;
 using System.Diagnostics;
+using System.IO;
+using System.Threading.Tasks;
 class CertificateService
 {
     // This method is the main entry point for configuring the certificate based on the provided arguments.

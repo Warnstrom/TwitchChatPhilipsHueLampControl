@@ -5,8 +5,13 @@ using Spectre.Console;
 using HueApi.ColorConverters;
 using Microsoft.Extensions.Configuration;
 using TwitchChatHueControls.Models;
-using System.Security.Principal;
-using System.Threading.Channels;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
+using System.Threading;
 
 namespace TwitchChatHueControls;
 
@@ -459,7 +464,8 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController, ILam
         { "stream.offline", HandleStreamOfflineNotificationWrapper },
         { "channel.subscribe", HandleChannelSubscriptionWrapper },
         { "channel.subscription.gift", HandleChannelGiftedSubscriptionWrapper },
-        { "channel.subscription.message", HandleChannelResubscriptionWrapper }
+        { "channel.subscription.message", HandleChannelResubscriptionWrapper },
+        { "channel.cheer", HandleChannelCheerWrapper }
     };
 
         if (eventHandlers.TryGetValue(eventType, out var handler))
@@ -548,6 +554,17 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController, ILam
         return Task.CompletedTask;
     }
 
+    private Task HandleChannelCheerWrapper(JsonDocument payload)
+    {
+        var deserializedPayload = DeserializePayload<ChannelCheerPayload>(payload);
+        if (deserializedPayload != null)
+        {
+            HandleChannelCheer(deserializedPayload);
+        }
+        return Task.CompletedTask;
+    }
+
+
     private async Task HandleStreamChatMessage(Notification<TwitchChatMessage> payload)
     {
         string ChatterUsername = payload.Payload.Event.chatter_user_name;
@@ -587,8 +604,14 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController, ILam
         await HandleLampEffectsCommand(EffectPalette.GiftedSubscription);
     }
 
-    private void HandleChannelResubscription(Notification<ChannelResubscriptionPayload> payload)
+    private async void HandleChannelResubscription(Notification<ChannelResubscriptionPayload> payload)
     {
+        await HandleLampEffectsCommand(EffectPalette.GiftedSubscription);
+    }
+
+    private async void HandleChannelCheer(Notification<ChannelCheerPayload> payload)
+    {
+        await HandleLampEffectsCommand(EffectPalette.Cheer);
 
     }
 
@@ -666,9 +689,6 @@ IHexColorMapDictionary hexColorMapDictionary, IHueController hueController, ILam
                     Console.WriteLine($"Error executing lamp effect: {ex}");
                 }
             });
-
-        await hueController.RunEffect(LightList, null);
-
     }
 
     // Method to resolve the color input into an RGB color.

@@ -1,9 +1,15 @@
 using Microsoft.Extensions.Configuration;
 using Octokit;
 using Spectre.Console;
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.IO.Compression;
+using System.Linq;
+using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 
 namespace TwitchChatHueControls;
 
@@ -43,26 +49,27 @@ internal class VersionUpdateService(IConfiguration configuration, IJsonFileContr
             }
 
             // Get the most recent release
-            Release latestRelease = releases.FirstOrDefault();
-            if (latestRelease == null)
+            List<Release> MainReleases = releases.Where(release => release.TagName.Contains("Release_")).ToList();
+
+            // Get version number from tag name Release_20241214-v1.0.0 -> 1.0.0
+            // Remove 'v' prefix from version number (e.g., 'v1.0.0' -> '1.0.0')
+            Release LatestRelease = MainReleases.FirstOrDefault();
+            latestVersion = LatestRelease.TagName.Split("-")[1].TrimStart('v');
+            if (MainReleases == null)
             {
                 AnsiConsole.MarkupLine("[red]Failed to identify the latest release.[/]");
                 return null;
             }
 
-            // Remove 'v' prefix from version number (e.g., 'v1.0.0' -> '1.0.0')
-            latestVersion = latestRelease.TagName.TrimStart('v');
-
             // Get current version from application configuration
             var currentVersion = configuration["ApplicationVersion"];
-
             // Compare versions to determine if an update is needed
             if (Version.TryParse(latestVersion, out var parsedLatestVersion) &&
                 Version.TryParse(currentVersion, out var parsedCurrentVersion) &&
                 parsedLatestVersion > parsedCurrentVersion)
             {
                 // Find the appropriate release asset for the current operating system
-                IReadOnlyList<ReleaseAsset> assetList = latestRelease.Assets;
+                IReadOnlyList<ReleaseAsset> assetList = LatestRelease.Assets;
                 ReleaseAsset asset = assetList.FirstOrDefault(a => a.Name.Contains(OS));
                 if (asset != null)
                 {
@@ -87,15 +94,22 @@ internal class VersionUpdateService(IConfiguration configuration, IJsonFileContr
         return null;
     }
 
+
+
+    // Get version number from tag name Release_20241214-v1.0.0 -> 1.0.0
+    // Remove 'v' prefix from version number (e.g., 'v1.0.0' -> '1.0.0')
+
     // Display detailed information about the latest release
     public async void DisplayUpdateDetails()
     {
         var releases = await client.Repository.Release.GetAll(_owner, _repo);
-        Release latestRelease = releases.FirstOrDefault();
-        latestVersion = latestRelease.TagName.TrimStart('v');
+        List<Release> MainReleases = releases.Where(release => release.TagName.Contains("Release_")).ToList();
+
+        Release LatestRelease = MainReleases.FirstOrDefault();
+        latestVersion = LatestRelease.TagName.TrimStart('v');
 
         var currentVersion = configuration["ApplicationVersion"];
-        IReadOnlyList<ReleaseAsset> assetList = latestRelease.Assets;
+        IReadOnlyList<ReleaseAsset> assetList = LatestRelease.Assets;
         ReleaseAsset asset = assetList.FirstOrDefault(a => a.Name.Contains(OS));
 
         // Create a formatted table with update information using Spectre.Console
@@ -104,11 +118,11 @@ internal class VersionUpdateService(IConfiguration configuration, IJsonFileContr
             .HideHeaders()
             .AddColumn(new TableColumn(""))
             .AddColumn(new TableColumn(""))
-            .AddRow("[green]Release ID: [/]", $"[bold blue]v{latestRelease.Id}[/]")
+            .AddRow("[green]Release ID: [/]", $"[bold blue]v{LatestRelease.Id}[/]")
             .AddRow("[green]Latest Version[/]", $"[bold blue]v{latestVersion}[/]")
             .AddRow("[green]Current Version[/]", $"[bold blue]v{currentVersion}[/]")
             .AddRow("[green]Download URL[/]", $"[link={asset.BrowserDownloadUrl}]Download Here[/]")
-            .AddRow("[green]Release Notes[/]", $"[grey]{latestRelease.Body}[/]");
+            .AddRow("[green]Release Notes[/]", $"[grey]{LatestRelease.Body}[/]");
 
         AnsiConsole.Write(updateTable);
     }

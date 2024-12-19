@@ -1,3 +1,4 @@
+using System;
 using HueApi.ColorConverters;
 
 namespace TwitchChatHueControls.Models;

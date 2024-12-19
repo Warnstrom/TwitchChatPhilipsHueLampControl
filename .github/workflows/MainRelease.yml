@@ -23,24 +23,29 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        # Try to get the latest main release
-        LATEST_RELEASE=$(gh release list --limit 1 | grep "Release_" | awk '{print $1}' || echo "")
+        # Try to get the latest dev release
+        LATEST_RELEASE=$(gh release list --limit 1 | grep "dev_" | awk '{print $1}' || echo "")
 
         if [ -z "$LATEST_RELEASE" ]; then
-          # If no previous release, start at 1.0.0
-          echo "version=1.0.0" >> $GITHUB_OUTPUT
+          # If no previous release, start at 0.1.0
+          echo "version=0.1.0" >> $GITHUB_OUTPUT
         else
           # Extract current version and increment
-          CURRENT_VERSION=$(echo "$LATEST_RELEASE" | sed -E 's/Release_[0-9]{8}-v?//')
+          CURRENT_VERSION=$(echo "$LATEST_RELEASE" | sed -E 's/dev_[0-9]{8}-v?//')
 
           # Split version into components
           MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
           MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
           PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
 
-          # Increment minor version for main releases
-          MINOR=$((MINOR + 1))
-          PATCH=0
+          # Increment patch version
+          NEW_PATCH=$((PATCH + 1))
+
+          # Handle patch version rollover
+          if [ $NEW_PATCH -ge 10 ]; then
+            NEW_PATCH=0
+            MINOR=$((MINOR + 1))
+          fi
 
           # Handle minor version rollover
           if [ $MINOR -ge 10 ]; then
@@ -48,7 +53,7 @@ jobs:
             MAJOR=$((MAJOR + 1))
           fi
 
-          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
         fi
 
@@ -56,7 +61,7 @@ jobs:
     - name: Generate Release Tag
       id: generate-tag
       run: |
-        RELEASE_TAG=Release_$(date +'%Y%m%d')-v${{ steps.get-latest-release.outputs.version }}
+        RELEASE_TAG=release_$(date +'%Y%m%d')-v${{ steps.get-latest-release.outputs.version }}
         echo "tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
 
     # Check if release already exists

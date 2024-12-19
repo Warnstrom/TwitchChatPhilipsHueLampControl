@@ -3,17 +3,17 @@ using System;
 namespace TwitchChatHueControls.Models;
 
 /// <summary>
-/// Represents a Twitch Channelsubscription  event
+/// Represents a Twitch ChannelCheer  event
 /// </summary>
-internal record ChannelSubscriptionPayload(
-    ChannelSubscriptionDetails ChannelSubscription,
-    ChannelSubscriptionEvent Event
+internal record ChannelCheerPayload(
+    ChannelCheerDetails ChannelCheer,
+    ChannelCheerEvent Event
 );
 
 /// <summary>
-/// Details of the Channelsubscription  configuration
+/// Details of the ChannelCheer  configuration
 /// </summary>
-internal record ChannelSubscriptionDetails(
+internal record ChannelCheerDetails(
     string Id,
     string Type,
     string Version,
@@ -25,16 +25,15 @@ internal record ChannelSubscriptionDetails(
 );
 
 /// <summary>
-/// Represents a Channelsubscription event
+/// Represents a ChannelCheer event
 /// </summary>
-internal record ChannelSubscriptionEvent(
+internal record ChannelCheerEvent(
     string user_id,
     string user_login,
     string user_name,
     string broadcaster_user_id,
     string broadcaster_user_login,
     string broadcaster_user_name,
-    string tier,
-    bool is_gift
+    string message,
+    int bits
 );
-
