@@ -202,7 +202,7 @@ internal class VersionUpdateService(IConfiguration configuration, IJsonFileContr
     private async Task StartUpdaterAndExit(string directoryPath)
     {
         // Configure the updater process based on the operating system
-        string updaterPath = "TwitchChatHueUpdater";
+        string updaterPath = "./Updater/TwitchChatHueUpdater";
         string arguments = "";
         switch (OS)
         {
