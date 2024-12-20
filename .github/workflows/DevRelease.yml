@@ -57,17 +57,18 @@ jobs:
         fi
     
         # Fetch all release tags and filter based on the prefix
-        latest_release=$(gh release list --limit 100 --json tagName --jq -r '.[].tagName' | grep -E "^${PREFIX}\w+[0-9]+\.[0-9]+" | head -n 1)
+        latest_tag=$(gh release list --limit 100 --json tagName --jq -r '.[].tagName' | grep -E "^${PREFIX}[0-9]{8}_v[0-9]+\.[0-9]+" | head -n 1)
     
         # Default to "0.0" if no matching tag is found
-        if [[ -z "$latest_release" ]]; then
+        if [[ -z "$latest_tag" ]]; then
           latest_release="0.0"
         else
-          # Extract the numeric part (e.g., 1.42) from the tag
-          latest_release=$(echo "$latest_release" | grep -Eo '[0-9]+\.[0-9]+')
+          # Extract the version number from the tag
+          latest_release=$(echo "$latest_tag" | grep -Eo '[0-9]+\.[0-9]+')
         fi
     
         echo "latest_release=$latest_release" >> $GITHUB_ENV
+
 
     - name: Increment version
       id: increment_version
