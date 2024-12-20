@@ -125,6 +125,7 @@ internal class App(IConfiguration configuration, IJsonFileController jsonControl
         else
         {
             var downloadUrl = await versionUpdateService.CheckForUpdates();
+            Console.WriteLine("ASDADADASDSAD");
             if (!string.IsNullOrEmpty(downloadUrl))
             {
                 bool continuePrompting = true;
