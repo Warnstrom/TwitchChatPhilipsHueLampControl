@@ -41,12 +41,24 @@ jobs:
         zip -r ../publish_linux.zip *
         cd ../../../
 
-    - name: Get the latest release
+    - name: Get the Latest Release
       id: get_latest_release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        latest_release=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' | grep -Eo 'dev_[0-9]+\.[0-9]+' || echo "0.0")
+        # Determine the prefix based on the branch
+        if [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
+          PREFIX="dev_"
+        elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          PREFIX="release_"
+        else
+          echo "Unsupported branch: ${{ github.ref }}"
+          exit 1
+        fi
+    
+        # Fetch the latest release tag and filter based on the prefix
+        latest_release=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' | grep -Eo "${PREFIX}\w+[0-9]+\.[0-9]+" || echo "0.0")
+        
         echo "latest_release=$latest_release" >> $GITHUB_ENV
 
     - name: Increment version
