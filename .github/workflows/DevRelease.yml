@@ -83,7 +83,7 @@ jobs:
 
         # Check if the release already exists
         release_exists=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' | grep -E "^$TAG_NAME$" || echo "no")
-
+        # Test
         # Create or update the release using the GitHub CLI
         if [ "$release_exists" = "no" ]; then
           gh release create "$TAG_NAME" ./bin/Release/publish_windows.zip ./bin/Release/publish_linux.zip --title "$RELEASE_TITLE" --target dev
