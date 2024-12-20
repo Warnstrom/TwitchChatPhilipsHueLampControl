@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  create-or-update-dev-release:
+  create-main-release:
     runs-on: ubuntu-latest
 
     steps:
@@ -21,6 +21,7 @@ jobs:
       with:
         dotnet-version: '8.0.x'
 
+    # Publish Windows Executable
     - name: Publish Windows Executable
       run: |
         dotnet publish -c Release -r win-x64 --self-contained true \
@@ -31,6 +32,7 @@ jobs:
         zip -r ../publish_windows.zip *
         cd ../../../
 
+    # Publish Linux Executable
     - name: Publish Linux Executable
       run: |
         dotnet publish -c Release -r linux-x64 --self-contained true \
@@ -41,24 +43,30 @@ jobs:
         zip -r ../publish_linux.zip *
         cd ../../../
 
-    - name: Get the latest release
+    # Get the latest release version
+    - name: Get the Latest Release
       id: get_latest_release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        latest_release=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' | grep -Eo 'release_\w*[0-9]+\.[0-9]+' || echo "0.0")
-        echo "latest_release=$latest_release" >> $GITHUB_ENV
+        # Fetch the latest release tag
+        latest_tag=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' | grep -Eo '[0-9]+\.[0-9]+' || echo "0.0")
 
-    - name: Increment version
+        # Output the latest release version
+        echo "latest_release=$latest_tag" >> $GITHUB_ENV
+
+    # Increment the version
+    - name: Increment Version
       id: increment_version
       run: |
         current_version=${{ env.latest_release }}
         major=$(echo $current_version | cut -d. -f1)
         minor=$(echo $current_version | cut -d. -f2)
-        new_version="$major.$((minor+1))"
+        new_version="$major.$((minor + 1))"
         echo "new_version=$new_version" >> $GITHUB_ENV
 
-    - name: Create or Update Release
+    # Create a new release with the incremented version
+    - name: Create New Release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
@@ -69,12 +77,10 @@ jobs:
         RELEASE_TITLE="Main Release v${{ env.new_version }}"
         TAG_NAME="release_${DATE}_v${{ env.new_version }}"
 
-        # Check if the release already exists
-        release_exists=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' | grep -E "^$TAG_NAME$" || echo "no")
-
-        # Create or update the release using the GitHub CLI
-        if [ "$release_exists" = "no" ]; then
-          gh release create "$TAG_NAME" ./bin/Release/publish_windows.zip ./bin/Release/publish_linux.zip --title "$RELEASE_TITLE" --target dev
-        else
-          gh release upload "$TAG_NAME" ./bin/Release/publish_windows.zip ./bin/Release/publish_linux.zip --clobber
-        fi
+        # Create a new release
+        gh release create "$TAG_NAME" \
+          ./bin/Release/publish_windows.zip \
+          ./bin/Release/publish_linux.zip \
+          --title "$RELEASE_TITLE" \
+          --notes "Automated Main build for version ${{ env.new_version }}" \
+          --target main
