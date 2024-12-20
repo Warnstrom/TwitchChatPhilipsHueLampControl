@@ -40,7 +40,7 @@ jobs:
         cd ./bin/Release/publish_linux-x64
         zip -r ../publish_linux.zip *
         cd ../../../
-
+        
     - name: Get the Latest Release
       id: get_latest_release
       env:
@@ -56,9 +56,17 @@ jobs:
           exit 1
         fi
     
-        # Fetch the latest release tag and filter based on the prefix
-        latest_release=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' | grep -Eo "${PREFIX}\w+[0-9]+\.[0-9]+" || echo "0.0")
-        
+        # Fetch all release tags and filter based on the prefix
+        latest_release=$(gh release list --limit 100 --json tagName --jq -r '.[].tagName' | grep -E "^${PREFIX}\w+[0-9]+\.[0-9]+" | head -n 1)
+    
+        # Default to "0.0" if no matching tag is found
+        if [[ -z "$latest_release" ]]; then
+          latest_release="0.0"
+        else
+          # Extract the numeric part (e.g., 1.42) from the tag
+          latest_release=$(echo "$latest_release" | grep -Eo '[0-9]+\.[0-9]+')
+        fi
+    
         echo "latest_release=$latest_release" >> $GITHUB_ENV
 
     - name: Increment version
