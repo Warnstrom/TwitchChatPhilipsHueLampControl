@@ -101,7 +101,7 @@ jobs:
         # Set the release title and tag name
         RELEASE_TITLE="${PREFIX^} Release v${{ env.new_version }}"
         TAG_NAME="${PREFIX}${DATE}_v${{ env.new_version }}"
-
+        # test 3
         # Create the new release
         gh release create "$TAG_NAME" \
           ./bin/Release/publish_windows.zip \
