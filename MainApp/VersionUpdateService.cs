@@ -49,12 +49,12 @@ internal class VersionUpdateService(IConfiguration configuration, IJsonFileContr
             }
 
             // Get the most recent release
-            List<Release> MainReleases = releases.Where(release => release.TagName.Contains("Release_")).ToList();
+            List<Release> MainReleases = releases.Where(release => release.TagName.Contains("release_")).ToList();
 
             // Get version number from tag name Release_20241214-v1.0.0 -> 1.0.0
             // Remove 'v' prefix from version number (e.g., 'v1.0.0' -> '1.0.0')
             Release LatestRelease = MainReleases.FirstOrDefault();
-            latestVersion = LatestRelease.TagName.Split("-")[1].TrimStart('v');
+            latestVersion = LatestRelease.TagName.Split("_v")[1];
             if (MainReleases == null)
             {
                 AnsiConsole.MarkupLine("[red]Failed to identify the latest release.[/]");
